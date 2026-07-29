@@ -1,19 +1,19 @@
 import express from "express";
-const router = express.Router();
+import { validateLogin, validateRegister } from "../middlewares/authValidn.js"
+import { login, register, updateAccount, deleteAccount, getAllUsers } from "../controller/authController.js";
 
+const router = express.Router();
 
 router.get("/health", (req, res) => {
     res.json({ status: "healthy", timestamp: new Date().toISOString() });
 });
 
-router.post('/login', (req, res) => {
-    console.log("Auth Service : Login request received");
-    res.json({ message: 'Login' });
-});
+router.post('/login', validateLogin, login);
+router.post('/register', validateRegister, register);
 
-router.post('/register', (req, res) => {
-    console.log("Auth Service : Register request received");
-    res.json({ message: 'Register' });
-});
+// In a real app, these should probably be protected by an authentication middleware
+router.put('/update', updateAccount);
+router.delete('/delete', deleteAccount);
+router.get('/users', getAllUsers);
 
 export default router;
