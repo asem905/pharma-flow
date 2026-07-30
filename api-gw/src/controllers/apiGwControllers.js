@@ -32,15 +32,6 @@ class ApiGwAuthController {
             });
     }
 
-    refresh(req, res, next) {
-        axios.post(`${process.env.AUTH_SERVICE_URL}/refresh`, req.body)
-            .then(response => {
-                res.json(response.data);
-            })
-            .catch(error => {
-                res.status(error.response.status).json(error.response.data);
-            });
-    }
 }
 const apiGwAuthController = new ApiGwAuthController();
 export { apiGwAuthController };    
