@@ -1,6 +1,5 @@
 import express from "express";
 import cors from "cors";
-import rateLimit from "express-rate-limit";
 import router from "./routes/routes.js";
 import dotenv from "dotenv";
 import bloomFilter from "./service/bloomFilterService.js";
@@ -15,13 +14,6 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-const apiLimiter = rateLimit({
-    windowMs: 5 * 60 * 1000,
-    max: 100,
-    message: "Too many requests from this IP, please try again after 5 minutes",
-});
-
-app.use("/", apiLimiter);
 app.use("/auth-service/api/v1", router);
 
 const startServer = async () => {
