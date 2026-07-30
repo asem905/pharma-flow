@@ -10,10 +10,8 @@ export class AuthService {
             console.log("User not found from bloom filter")
             return appError.createErrorResponse("User not found", 404, "fail")
         }
-        console.log("User might exist in bloom filter")
         const user = await userModel.findByEmail(email)
         if (!user) {
-            console.log("User not found from DB")
             return appError.createErrorResponse("User not found", 404, "fail")
         }
         const isPasswordValid = await bcrypt.compare(password, user.password)
