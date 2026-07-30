@@ -23,16 +23,16 @@ router.get("/health", (req, res) => {
     res.json({ status: "healthy", timestamp: new Date().toISOString() });
 });
 
-router.post("/category", validateRole("ADMIN"), validateCategory, createCategory);
-router.delete("/category/:id", validateRole("ADMIN"), deleteCategory);
-router.put("/category/:id", validateRole("ADMIN"), validateCategory, updateCategory);
-router.get("/category/:id", validateRole("ADMIN", "CUSTOMER"), findCategory);
-router.get("/category", validateRole("ADMIN", "CUSTOMER"), findAllCategories);
+router.post("/categories", validateRole("ADMIN"), validateCategory, createCategory);
+router.delete("/categories/:id", validateRole("ADMIN"), deleteCategory);
+router.put("/categories/:id", validateRole("ADMIN"), validateCategory, updateCategory);
+router.get("/categories/:id", validateRole("ADMIN", "CUSTOMER"), findCategory);
+router.get("/categories", validateRole("ADMIN", "CUSTOMER"), findAllCategories);
 
-router.post("/product", validateRole("ADMIN"), validateProduct, createProduct);
-router.delete("/product/:id", validateRole("ADMIN"), deleteProduct);
-router.put("/product/:id", validateRole("ADMIN"), validateProduct, updateProduct);
-router.get("/product/:id", validateRole("ADMIN", "CUSTOMER"), findProduct);
-router.get("/product", validateRole("ADMIN", "CUSTOMER"), findAllProducts);
+router.post("/products", validateRole("ADMIN"), validateProduct, createProduct);
+router.delete("/products/:id", validateRole("ADMIN"), deleteProduct);
+router.put("/products/:id", validateRole("ADMIN"), validateProduct, updateProduct);
+router.get("/products/:id", validateRole("ADMIN", "CUSTOMER"), findProduct);
+router.get("/products", validateRole("ADMIN", "CUSTOMER"), findAllProducts);
 
 export default router;

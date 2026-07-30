@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import router from "./routes/routes.js";
 import dotenv from "dotenv";
+import extractCurrentUser from "./middlewares/extractCurrentUser.js";
 dotenv.config();
 const app = express();
 
@@ -11,6 +12,7 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(extractCurrentUser);
 
 app.use("/product-service/api/v1", router);
 

@@ -3,19 +3,19 @@ import { prisma } from "../config/db.js";
 class ProductsModel {
 
     static async createProduct(data) {
-        return await prisma.products.create({
+        return await prisma.product.create({
             data
         });
     }
     static async deleteProduct(id) {
-        return await prisma.products.delete({
+        return await prisma.product.delete({
             where: {
                 id
             }
         });
     }
     static async updateProduct(id, data) {
-        return await prisma.products.update({
+        return await prisma.product.update({
             where: {
                 id
             },
@@ -23,19 +23,19 @@ class ProductsModel {
         });
     }
     static async findProduct(id) {
-        return await prisma.products.findUnique({
+        return await prisma.product.findUnique({
             where: {
                 id
             }
         });
     }
     static async findProductByName(name) {
-        return await prisma.products.findUnique({
+        return await prisma.product.findUnique({
             where: { name }
         });
     }
     static async findAllProducts() {
-        return await prisma.products.findMany();
+        return await prisma.product.findMany();
     }
 
 }
