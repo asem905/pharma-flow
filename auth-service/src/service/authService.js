@@ -1,16 +1,20 @@
-import { prisma } from "../config/db.js"
+import userModel from "../model/usersModel.js"
 import bcrypt from "bcrypt"
 import appError from "../utils/appError.js"
 import genJWT from "../utils/genJWT.js"
+import bloomFilter from "./bloomFilterService.js"
 export class AuthService {
     static async login(email, password) {
-        const user = await prisma.users.findUnique({
-            where: {
-                email
-            }
-        })
+        // Bloom filter fast-path: if email is definitely not registered, skip DB entirely
+        if (!bloomFilter.mightExistEmail(email)) {
+            console.log("User not found from bloom filter")
+            return appError.createErrorResponse("User not found", 404, "fail")
+        }
+        console.log("User might exist in bloom filter")
+        const user = await userModel.findByEmail(email)
         if (!user) {
-            return appError.createErrorResponse("Invalid credentials", 401, "fail")
+            console.log("User not found from DB")
+            return appError.createErrorResponse("User not found", 404, "fail")
         }
         const isPasswordValid = await bcrypt.compare(password, user.password)
         if (!isPasswordValid) {
@@ -22,11 +26,7 @@ export class AuthService {
         return { token, user: userWithoutPassword }
     }
     static async register(full_name, email, password, confirm_password, phone, address, role) {
-        const user = await prisma.users.findUnique({
-            where: {
-                email
-            }
-        })
+        const user = await userModel.findByEmail(email)
         if (user) {
             return appError.createErrorResponse("User already exists", 400, "fail")
         }
@@ -35,26 +35,24 @@ export class AuthService {
         }
         const hashedPassword = await bcrypt.hash(password, 12)
 
-        const newUser = await prisma.users.create({
-            data: {
-                full_name,
-                email,
-                password: hashedPassword,
-                phone,
-                address,
-                role
-            }
+        const newUser = await userModel.create({
+            full_name,
+            email,
+            password: hashedPassword,
+            phone,
+            address,
+            role
         })
+
+        // Add to bloom filter so future login attempts for this email hit the DB
+        bloomFilter.addEmail(email)
+
         const token = genJWT({ id: newUser.id, role: newUser.role })
         const { password: _, ...userWithoutPassword } = newUser
         return { token, user: userWithoutPassword }
     }
     static async updateAccount(id, full_name, email, password, confirm_password, phone, address, role) {
-        const user = await prisma.users.findUnique({
-            where: {
-                id
-            }
-        })
+        const user = await userModel.findById(id)
         if (!user) {
             return appError.createErrorResponse("User not found", 404, "fail")
         }
@@ -62,41 +60,28 @@ export class AuthService {
             return appError.createErrorResponse("Passwords do not match", 400, "fail")
         }
         const hashedPassword = await bcrypt.hash(password, 12)
-        const updatedUser = await prisma.users.update({
-            where: {
-                id
-            },
-            data: {
-                full_name,
-                email,
-                password: hashedPassword,
-                phone,
-                address,
-                role
-            }
+        const updatedUser = await userModel.update(id, {
+            full_name,
+            email,
+            password: hashedPassword,
+            phone,
+            address,
+            role
         })
         const { password: _, ...userWithoutPassword } = updatedUser
         return userWithoutPassword
     }
     static async deleteAccount(id) {
-        const user = await prisma.users.findUnique({
-            where: {
-                id
-            }
-        })
+        const user = await userModel.findById(id)
         if (!user) {
             return appError.createErrorResponse("User not found", 404, "fail")
         }
-        await prisma.users.delete({
-            where: {
-                id
-            }
-        })
+        await userModel.delete(id)
         const { password: _, ...userWithoutPassword } = user
         return userWithoutPassword
     }
     static async getAllUsers() {
-        const users = await prisma.users.findMany()
+        const users = await userModel.findAll()
         return users.map(user => {
             const { password, ...userWithoutPassword } = user;
             return userWithoutPassword;
