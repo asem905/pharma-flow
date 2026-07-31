@@ -17,7 +17,7 @@ enum user_roles {
     ADMIN
 }
 model users {
-  id         Int        @id @default(autoincrement())
+  id         String        @id @default(uuid())
   full_name  String     @db.VarChar(150)
   email      String     @unique @db.VarChar(120)
   password   String     @db.VarChar(255)

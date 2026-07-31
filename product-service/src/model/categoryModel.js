@@ -34,7 +34,9 @@ class CategoryModel {
         });
     }
     static async findAllCategories() {
-        return await prisma.category.findMany();
+        return await prisma.category.findMany({
+            orderBy: { name: "asc" },
+        });
     }
 }
 

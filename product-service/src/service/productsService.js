@@ -49,12 +49,14 @@ export class ProductsService {
         if (existing) {
             return appError.createErrorResponse("Product already exists", 400, "fail")
         }
-        const newProduct = await ProductsModel.createProduct(data);
-        if (!newProduct) {
-            return appError.createErrorResponse("Failed to create product", 400, "fail")
+        try {
+            const newProduct = await ProductsModel.createProduct(data);
+            updateCacheAsync(() => cacheService.del(KEYS.all()));
+            return newProduct;
+        } catch (err) {
+            console.error("[ProductsService] createProduct failed:", err.message);
+            return appError.createErrorResponse("Failed to create product", 500, "fail");
         }
-        updateCacheAsync(() => cacheService.del(KEYS.all()));
-        return newProduct;
     }
 
     static async deleteProduct(id) {
@@ -62,12 +64,14 @@ export class ProductsService {
         if (!product) {
             return appError.createErrorResponse("Product not found", 404, "fail")
         }
-        const deletedProduct = await ProductsModel.deleteProduct(id);
-        if (!deletedProduct) {
-            return appError.createErrorResponse("Failed to delete product", 400, "fail")
+        try {
+            const deletedProduct = await ProductsModel.deleteProduct(id);
+            updateCacheAsync(() => cacheService.del(KEYS.one(id), KEYS.all()));
+            return deletedProduct;
+        } catch (err) {
+            console.error("[ProductsService] deleteProduct failed:", err.message);
+            return appError.createErrorResponse("Failed to delete product", 500, "fail");
         }
-        updateCacheAsync(() => cacheService.del(KEYS.one(id), KEYS.all()));
-        return deletedProduct;
     }
 
     static async updateProduct(id, data) {
@@ -75,12 +79,14 @@ export class ProductsService {
         if (!product) {
             return appError.createErrorResponse("Product not found", 404, "fail")
         }
-        const updatedProduct = await ProductsModel.updateProduct(id, data);
-        if (!updatedProduct) {
-            return appError.createErrorResponse("Failed to update product", 400, "fail")
+        try {
+            const updatedProduct = await ProductsModel.updateProduct(id, data);
+            updateCacheAsync(() => cacheService.del(KEYS.one(id), KEYS.all()));
+            return updatedProduct;
+        } catch (err) {
+            console.error("[ProductsService] updateProduct failed:", err.message);
+            return appError.createErrorResponse("Failed to update product", 500, "fail");
         }
-        updateCacheAsync(() => cacheService.del(KEYS.one(id), KEYS.all()));
-        return updatedProduct;
     }
 
     static async findProduct(id) {

@@ -1,5 +1,4 @@
 import * as z from "zod";
-import userRoles from "../utils/userRoles.js";
 
 const productSchema = z.object({
     name: z.string().min(3),
@@ -14,7 +13,7 @@ const categorySchema = z.object({
     name: z.string().min(3),
 })
 
-const validateProduct = async (req, res, next) => {
+const validateProduct = (req, res, next) => {
     const result = productSchema.safeParse(req.body);
     if (!result.success) {
         return res.status(400).json({ error: result.error.issues });
@@ -22,7 +21,7 @@ const validateProduct = async (req, res, next) => {
     next();
 }
 
-const validateCategory = async (req, res, next) => {
+const validateCategory = (req, res, next) => {
     const result = categorySchema.safeParse(req.body);
     if (!result.success) {
         return res.status(400).json({ error: result.error.issues });

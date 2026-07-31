@@ -24,9 +24,8 @@ class ProductsModel {
     }
     static async findProduct(id) {
         return await prisma.product.findUnique({
-            where: {
-                id
-            }
+            where: { id },
+            include: { category: true },
         });
     }
     static async findProductByName(name) {
@@ -35,7 +34,10 @@ class ProductsModel {
         });
     }
     static async findAllProducts() {
-        return await prisma.product.findMany();
+        return await prisma.product.findMany({
+            include: { category: true },
+            orderBy: { createdAt: "desc" },
+        });
     }
 
 }

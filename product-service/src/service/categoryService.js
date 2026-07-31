@@ -50,12 +50,14 @@ export class CategoryService {
         if (existing) {
             return appError.createErrorResponse("Category already exists", 400, "fail")
         }
-        const newCategory = await CategoryModel.createCategory(data);
-        if (!newCategory) {
-            return appError.createErrorResponse("Failed to create category", 400, "fail")
+        try {
+            const newCategory = await CategoryModel.createCategory(data);
+            updateCacheAsync(() => cacheService.del(KEYS.all()));
+            return newCategory;
+        } catch (err) {
+            console.error("[CategoryService] createCategory failed:", err.message);
+            return appError.createErrorResponse("Failed to create category", 500, "fail");
         }
-        updateCacheAsync(() => cacheService.del(KEYS.all()));
-        return newCategory;
     }
 
     static async deleteCategory(id) {
@@ -63,12 +65,14 @@ export class CategoryService {
         if (!category) {
             return appError.createErrorResponse("Category not found", 404, "fail")
         }
-        const deletedCategory = await CategoryModel.deleteCategory(id);
-        if (!deletedCategory) {
-            return appError.createErrorResponse("Failed to delete category", 400, "fail")
+        try {
+            const deletedCategory = await CategoryModel.deleteCategory(id);
+            updateCacheAsync(() => cacheService.del(KEYS.one(id), KEYS.all()));
+            return deletedCategory;
+        } catch (err) {
+            console.error("[CategoryService] deleteCategory failed:", err.message);
+            return appError.createErrorResponse("Failed to delete category", 500, "fail");
         }
-        updateCacheAsync(() => cacheService.del(KEYS.one(id), KEYS.all()));
-        return deletedCategory;
     }
 
     static async updateCategory(id, data) {
@@ -76,12 +80,14 @@ export class CategoryService {
         if (!category) {
             return appError.createErrorResponse("Category not found", 404, "fail")
         }
-        const updatedCategory = await CategoryModel.updateCategory(id, data);
-        if (!updatedCategory) {
-            return appError.createErrorResponse("Failed to update category", 400, "fail")
+        try {
+            const updatedCategory = await CategoryModel.updateCategory(id, data);
+            updateCacheAsync(() => cacheService.del(KEYS.one(id), KEYS.all()));
+            return updatedCategory;
+        } catch (err) {
+            console.error("[CategoryService] updateCategory failed:", err.message);
+            return appError.createErrorResponse("Failed to update category", 500, "fail");
         }
-        updateCacheAsync(() => cacheService.del(KEYS.one(id), KEYS.all()));
-        return updatedCategory;
     }
 
     static async findCategory(id) {
