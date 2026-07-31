@@ -7,8 +7,20 @@ import { connectRabbitMQ } from "./config/rabbitmq.js";
 dotenv.config();
 const app = express();
 
+const allowedOrigins = [
+    process.env.APIGW_URL,
+    "http://localhost:5173",
+];
+
 app.use(cors({
-    origin: process.env.APIGW_URL,
+    origin: (origin, callback) => {
+        // Allow requests with no origin (like mobile apps or curl)
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
     credentials: true
 }));
 app.use(express.json());

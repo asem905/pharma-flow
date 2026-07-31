@@ -8,7 +8,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Resolve proto file from monorepo root
-const PROTO_PATH = path.resolve(__dirname, "../../../../proto/product.proto");
+const PROTO_PATH = path.resolve(__dirname, "../../../proto/product.proto");
 
 const packageDef = protoLoader.loadSync(PROTO_PATH, {
     keepCase: true,

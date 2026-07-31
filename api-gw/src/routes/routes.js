@@ -1,6 +1,7 @@
 import express from "express";
 import { authRoutes } from "./authroutes.js";
 import { productsCategoriesRoutes } from "./productsCategoriesRoutes.js";
+import { ordersRoutes } from "./ordersRoutes.js";
 import verifyToken from "../middlewares/verifyToken.js";
 const router = express.Router();
 
@@ -15,6 +16,7 @@ router.use("/auth", authRoutes);
 // Protected routes — verifyToken sets req.currentUser before hitting downstream
 router.use("/", verifyToken, productsCategoriesRoutes);
 
+router.use("/orders", verifyToken, ordersRoutes);
 // router.use("/payments", verifyToken, paymentsRoutes);
 
 export default router;

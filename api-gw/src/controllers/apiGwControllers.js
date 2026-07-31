@@ -110,6 +110,54 @@ class ApiGwProductController {
     }
 }
 
+class ApiGwOrderController {
+    createOrder(req, res, next) {
+        axios.post(`${process.env.ORDER_SERVICE_URL}/orders`, req.body, {
+            headers: forwardUserHeader(req.currentUser)
+        })
+            .then(response => { res.json(response.data); })
+            .catch(error => { res.status(error.response?.status || 500).json(error.response?.data || { message: "Internal Server Error" }); });
+    }
+    deleteOrder(req, res, next) {
+        axios.delete(`${process.env.ORDER_SERVICE_URL}/orders/${req.params.id}`, {
+            headers: forwardUserHeader(req.currentUser)
+        })
+            .then(response => { res.json(response.data); })
+            .catch(error => { res.status(error.response?.status || 500).json(error.response?.data || { message: "Internal Server Error" }); });
+    }
+    updateOrder(req, res, next) {
+        axios.put(`${process.env.ORDER_SERVICE_URL}/orders/${req.params.id}`, req.body, {
+            headers: forwardUserHeader(req.currentUser)
+        })
+            .then(response => { res.json(response.data); })
+            .catch(error => { res.status(error.response?.status || 500).json(error.response?.data || { message: "Internal Server Error" }); });
+    }
+    findOrder(req, res, next) {
+        axios.get(`${process.env.ORDER_SERVICE_URL}/orders/${req.params.id}`, {
+            headers: forwardUserHeader(req.currentUser)
+        })
+            .then(response => { res.json(response.data); })
+            .catch(error => { res.status(error.response?.status || 500).json(error.response?.data || { message: "Internal Server Error" }); });
+    }
+    findAllOrders(req, res, next) {
+        axios.get(`${process.env.ORDER_SERVICE_URL}/orders`, {
+            headers: forwardUserHeader(req.currentUser)
+        })
+            .then(response => { res.json(response.data); })
+            .catch(error => { res.status(error.response?.status || 500).json(error.response?.data || { message: "Internal Server Error" }); });
+    }
+    findOrdersForCustomer(req, res, next) {
+        axios.get(`${process.env.ORDER_SERVICE_URL}/orders/customer/${req.params.customerId}`, {
+            headers: forwardUserHeader(req.currentUser),
+            params: req.query
+        })
+            .then(response => { res.json(response.data); })
+            .catch(error => { res.status(error.response?.status || 500).json(error.response?.data || { message: "Internal Server Error" }); });
+    }
+}
+
 const apiGwAuthController = new ApiGwAuthController();
 const apiGwProductController = new ApiGwProductController();
-export { apiGwAuthController, apiGwProductController };
+const apiGwOrderController = new ApiGwOrderController();
+
+export { apiGwAuthController, apiGwProductController, apiGwOrderController };

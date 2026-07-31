@@ -1,5 +1,6 @@
 const extractCurrentUser = (req, res, next) => {
     const userHeader = req.headers["x-current-user"];
+    console.log("userHeader", userHeader);
     if (userHeader) {
         try {
             req.currentUser = JSON.parse(userHeader);
@@ -7,6 +8,7 @@ const extractCurrentUser = (req, res, next) => {
             req.currentUser = null;
         }
     }
+    console.log("req.currentUser", req.currentUser);
     next();
 };
 

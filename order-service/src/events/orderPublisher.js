@@ -9,6 +9,7 @@ function publish(routingKey, payload) {
     }));
     // persistent: true → message survives broker restart
     channel.publish(EXCHANGE, routingKey, message, { persistent: true });
+
     console.log(`[Publisher] ${routingKey}`, payload);
 }
 
@@ -55,4 +56,20 @@ export const publishStockAdjust = (orderId, adjustments) =>
         event: "order.item.updated",
         orderId,
         stockAdjustments: adjustments,
+    });
+
+// Called after any successful order update (status change, item change, etc.)
+// notification-service will consume this to send "Your order was updated" email
+export const publishOrderUpdated = (order) =>
+    publish("order.updated", {
+        event: "order.updated",
+        orderId: order.id,
+        userId: order.userId,
+        status: order.status,
+        totalPrice: order.totalPrice.toString(),
+        orderItems: order.orderItems.map((i) => ({
+            productId: i.productId,
+            quantity: i.quantity,
+            price: i.price.toString(),
+        })),
     });

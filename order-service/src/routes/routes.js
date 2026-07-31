@@ -20,8 +20,6 @@ router.get("/health", (req, res) => {
 router.post("/orders", validateRole("ADMIN", "CUSTOMER"), validateCreateOrder, createOrder);
 router.delete("/orders/:id", validateRole("ADMIN", "CUSTOMER"), deleteOrder);
 router.put("/orders/:id", validateRole("ADMIN", "CUSTOMER"), updateOrder);
-// IMPORTANT: /orders/customer/:customerId MUST come before /orders/:id
-// Otherwise Express matches "customer" as the :id param value
 router.get("/orders/customer/:customerId", validateRole("CUSTOMER"), validateOrderQuery, findOrdersForCustomer);
 router.get("/orders/:id", validateRole("ADMIN", "CUSTOMER"), findOrder);
 router.get("/orders", validateRole("ADMIN"), findAllOrders);

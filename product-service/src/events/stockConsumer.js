@@ -7,12 +7,15 @@ const QUEUES = {
     stockAdjust: "stock.adjust",
 };
 
-// Invalidate product cache after stock changes so reads reflect new values
+// Invalidate product cache after stock changes so reads reflect new values.
+// Collects all affected keys + the list key and deletes in a SINGLE Redis call.
 const invalidateProductCache = (productIds) => {
-    productIds.forEach((id) => {
-        cacheService.del(`products:${id}`, "products:all")
-            .catch((err) => console.error("[Consumer] Cache invalidation failed:", err));
-    });
+    const keys = [
+        ...productIds.map((id) => `products:${id}`), // individual product caches
+        "products:all",                               // list cache — deleted once
+    ];
+    cacheService.del(...keys)
+        .catch((err) => console.error("[Consumer] Cache invalidation failed:", err));
 };
 
 export async function startStockConsumer() {
@@ -31,7 +34,7 @@ export async function startStockConsumer() {
     // Process one message at a time — prevents DB overload under high traffic
     channel.prefetch(1);
 
-    // ── Consumer: stock.restore ───────────────────────────────────────────────
+    //  Consumer: stock.restore
     // Triggered by: order.cancelled, order.deleted
     channel.consume(QUEUES.stockRestore, async (msg) => {
         if (!msg) return;
@@ -67,7 +70,7 @@ export async function startStockConsumer() {
         }
     });
 
-    // ── Consumer: stock.adjust ────────────────────────────────────────────────
+    //  Consumer: stock.adjust 
     // Triggered by: order.item.updated (qty decreased → return excess stock)
     channel.consume(QUEUES.stockAdjust, async (msg) => {
         if (!msg) return;
@@ -78,11 +81,13 @@ export async function startStockConsumer() {
                 channel.ack(msg);
                 return;
             }
+            console.log("==============1stockAdjustments", stockAdjustments.length);
 
             // 1. Format into VALUES clause for raw SQL
             const valuesString = stockAdjustments
                 .map(item => `('${item.productId}', ${item.delta})`)
                 .join(', ');
+            console.log("==============2stockAdjustments", valuesString);
 
             // 2. Single atomic UPDATE with VALUES subquery
             await prisma.$executeRawUnsafe(`
