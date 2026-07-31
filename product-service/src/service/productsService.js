@@ -13,7 +13,26 @@ import cacheService from "./cacheService.js"
 // and returns the result.
 //
 // This keeps Redis simple and avoids stale or inconsistent cached data.
+//and this prevent race condition that may occcur if i made with each request 
+//as imagine:
+//Request A updates Product 2
+//Request B updates Product 3
+// Both read the old list.
+// Each writes its own version.
+// One update overwrites the other.
+// Example:
+// List: [P1, P2, P3]
 
+// Request A reads → gets [P1, P2, P3]
+// Request B reads → gets [P1, P2, P3]
+
+// A updates P2 → sends [P1, P2', P3]
+// B updates P3 → sends [P1, P2, P3']
+
+// If B writes last → P2' is lost.
+// If A writes last → P3' is lost.
+
+// Result: Inconsistent state
 
 const KEYS = {
     all: () => "products:all",
