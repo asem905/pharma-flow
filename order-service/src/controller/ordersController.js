@@ -1,5 +1,6 @@
 import asyncHandler from "../middlewares/asyncWrapper.js"
 import { OrdersService } from "../service/ordersService.js"
+import appError from "../utils/appError.js";
 
 export const createOrder = asyncHandler(async (req, res, next) => {
     const userId = req.currentUser.id;
@@ -78,7 +79,14 @@ export const findAllOrders = asyncHandler(async (req, res, next) => {
 export const findOrdersForCustomer = asyncHandler(async (req, res, next) => {
     // req.validatedQuery is set by validateOrderQuery middleware
     // it contains coerced types: { status?, fromDate?: Date, toDate?: Date }
-    const result = await OrdersService.findOrdersForCustomer(req.params.customerId, req.validatedQuery);
+    const userId = req.currentUser.id;
+    console.log("==================================", req.currentUser.role, req.params.id);
+    if (req.currentUser.role === "CUSTOMER") {
+        if (userId !== req.params.id) {
+            return next(appError.createErrorResponse("You are not authorized to access this resource", 403));
+        }
+    }
+    const result = await OrdersService.findOrdersForCustomer(req.params.id, req.validatedQuery);
     if (result.statusCode) {
         return res.status(result.statusCode).json({
             status: "fail",

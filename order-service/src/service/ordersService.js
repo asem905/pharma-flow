@@ -1,6 +1,6 @@
 import ordersModel from "../model/ordersModel.js";
 import appError from "../utils/appError.js";
-import { getProductsInfo, decrementStock } from "../grpc/productGrpcClient.js";
+import { getProductsInfo, validateAndReserveStock, decrementStock } from "../grpc/productGrpcClient.js";
 import {
     publishOrderPlaced,
     publishOrderCancelled,
@@ -22,71 +22,43 @@ export class OrdersService {
             return existing;
         }
 
-        //  Batch-fetch price + stock via gRPC
-        const productIds = orderItems.map((item) => item.productId);
-        let productsInfo;
+        // Single gRPC call: validate existence, check stock, snapshot prices, decrement
+        // Replaces: getProductsInfo (1 call) + decrementStock (1 call) = 2 round trips
+        const reserveItems = orderItems.map((item) => ({
+            product_id: item.productId,
+            quantity: item.quantity,
+        }));
+
+        let reserveResult;
         try {
-            console.log(`[createOrder] gRPC getProductsInfo → ${productIds.length} product(s)`);
-            const response = await getProductsInfo({ product_ids: productIds });
-            productsInfo = response.products;
-            console.log(`[createOrder] gRPC getProductsInfo ✔ received ${productsInfo.length} result(s)`);
+            console.log(`[createOrder] gRPC validateAndReserveStock → ${reserveItems.length} item(s)`);
+            reserveResult = await validateAndReserveStock({ items: reserveItems });
+            console.log(`[createOrder] gRPC validateAndReserveStock ✔ success=${reserveResult.success}`);
         } catch (err) {
-            console.error("[createOrder] gRPC getProductsInfo ✖ failed:", err.message);
+            console.error("[createOrder] gRPC validateAndReserveStock ✖ failed:", err.message);
             return appError.createErrorResponse("Product service unavailable", 503, "fail");
         }
 
-        //  Validate: existence + sufficient stock
-        const productMap = new Map(productsInfo.map((p) => [p.product_id, p]));
-        for (const item of orderItems) {
-            const info = productMap.get(item.productId);
-            if (!info || !info.found) {
-                console.warn(`[createOrder] Product not found: ${item.productId}`);
-                return appError.createErrorResponse(`Product '${item.productId}' not found`, 404, "fail");
-            }
-            if (info.stock < item.quantity) {
-                console.warn(`[createOrder] Insufficient stock for ${item.productId}: available=${info.stock}, requested=${item.quantity}`);
-                return appError.createErrorResponse(
-                    `Insufficient stock for product '${item.productId}' (available: ${info.stock}, requested: ${item.quantity})`,
-                    409, "fail"
-                );
-            }
+        if (!reserveResult.success) {
+            console.warn(`[createOrder] Reserve rejected: product=${reserveResult.failed_product_id} | ${reserveResult.message}`);
+            return appError.createErrorResponse(
+                `Stock error for product '${reserveResult.failed_product_id}': ${reserveResult.message}`,
+                409, "fail"
+            );
         }
 
-        //  Snapshot prices + compute totalPrice
+        // Build enriched items from the price snapshot returned by the gRPC call
+        const priceMap = new Map(reserveResult.reserved.map((r) => [r.product_id, r.price]));
         const enrichedItems = orderItems.map((item) => ({
             productId: item.productId,
             quantity: item.quantity,
-            price: productMap.get(item.productId).price,
+            price: priceMap.get(item.productId),
         }));
 
         const totalPrice = enrichedItems
             .reduce((sum, item) => sum + parseFloat(item.price) * item.quantity, 0)
             .toFixed(2);
-        console.log(`[createOrder] totalPrice=$${totalPrice} | items:`, enrichedItems.map(i => `${i.productId} x${i.quantity} @${i.price}`));
-
-        //  Decrement stock via gRPC
-        const stockUpdates = enrichedItems.map((item) => ({
-            product_id: item.productId,
-            quantity: item.quantity,
-        }));
-
-        let decrementResult;
-        try {
-            console.log(`[createOrder] gRPC decrementStock → reserving stock for ${stockUpdates.length} product(s)`);
-            decrementResult = await decrementStock({ updates: stockUpdates });
-            console.log(`[createOrder] gRPC decrementStock ✔ success=${decrementResult.success}`);
-        } catch (err) {
-            console.error("[createOrder] gRPC decrementStock ✖ failed:", err.message);
-            return appError.createErrorResponse("Failed to reserve stock", 503, "fail");
-        }
-
-        if (!decrementResult.success) {
-            console.warn(`[createOrder] Stock decrement rejected: product=${decrementResult.failed_product_id} | ${decrementResult.message}`);
-            return appError.createErrorResponse(
-                `Stock error for product '${decrementResult.failed_product_id}': ${decrementResult.message}`,
-                409, "fail"
-            );
-        }
+        console.log(`[createOrder] totalPrice=$${totalPrice}`);
 
         //  Create order + items atomically in DB
         try {
@@ -96,6 +68,7 @@ export class OrdersService {
             return order;
         } catch (err) {
             console.error("[createOrder] ✖ DB write failed — rolling back stock via RabbitMQ:", err.message);
+            // Stock was already decremented by the gRPC call — restore it via RabbitMQ
             publishOrderDeleted({ id: "rollback", orderItems: enrichedItems.map(i => ({ productId: i.productId, quantity: i.quantity })) });
             return appError.createErrorResponse("Failed to create order", 500, "fail");
         }

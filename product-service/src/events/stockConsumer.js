@@ -88,8 +88,8 @@ export async function startStockConsumer() {
                 .map(item => `('${item.productId}', ${item.delta})`)
                 .join(', ');
             console.log("==============2stockAdjustments", valuesString);
-
-            // 2. Single atomic UPDATE with VALUES subquery
+            // console.time("===================test raw query")
+            // 2. Single atomic UPDATE with VALUES subquery causes to decrease latency much more
             await prisma.$executeRawUnsafe(`
                 UPDATE "products" AS p
                 SET stock = p.stock + v.delta
@@ -105,6 +105,7 @@ export async function startStockConsumer() {
             //         });
             //     }
             // });
+            // console.timeEnd("===================test raw query")
 
             invalidateProductCache(stockAdjustments.map((i) => i.productId));
             channel.ack(msg);

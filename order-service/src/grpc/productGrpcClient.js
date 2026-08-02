@@ -29,5 +29,6 @@ const client = new proto.ProductService(
 
 // Promisify so callers can use async/await
 export const getProductsInfo = promisify(client.getProductsInfo.bind(client));
+export const validateAndReserveStock = promisify(client.validateAndReserveStock.bind(client));
 export const decrementStock = promisify(client.decrementStock.bind(client));
 export const incrementStock = promisify(client.incrementStock.bind(client));

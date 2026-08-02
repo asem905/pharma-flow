@@ -20,7 +20,7 @@ router.get("/health", (req, res) => {
 router.post("/orders", validateRole("ADMIN", "CUSTOMER"), validateCreateOrder, createOrder);
 router.delete("/orders/:id", validateRole("ADMIN", "CUSTOMER"), deleteOrder);
 router.put("/orders/:id", validateRole("ADMIN", "CUSTOMER"), updateOrder);
-router.get("/orders/customer/:customerId", validateRole("CUSTOMER"), validateOrderQuery, findOrdersForCustomer);
+router.get("/orders/customer/:id", validateRole("CUSTOMER", "ADMIN"), validateOrderQuery, findOrdersForCustomer);
 router.get("/orders/:id", validateRole("ADMIN", "CUSTOMER"), findOrder);
 router.get("/orders", validateRole("ADMIN"), findAllOrders);
 

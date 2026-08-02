@@ -40,6 +40,44 @@ class ProductsModel {
         });
     }
 
+    // ── gRPC batch helpers ──────────────────────────────────────────────────────
+
+    // Fetch id + price + stock for a list of IDs in one query
+    static async findManyByIds(ids) {
+        return await prisma.product.findMany({
+            where: { id: { in: ids } },
+            select: { id: true, price: true, stock: true },
+        });
+    }
+
+    // Single-statement batch decrement — one DB round trip
+    // items: [{ product_id, quantity }]
+    static async batchDecrementStock(items) {
+        const valuesString = items
+            .map((i) => `('${i.product_id}', ${i.quantity})`)
+            .join(", ");
+        return await prisma.$executeRawUnsafe(`
+            UPDATE "products" AS p
+            SET stock = p.stock - v.quantity
+            FROM (VALUES ${valuesString}) AS v(id, quantity)
+            WHERE p.id = CAST(v.id AS text)
+        `);
+    }
+
+    // Single-statement batch increment — one DB round trip
+    // items: [{ product_id, quantity }]
+    static async batchIncrementStock(items) {
+        const valuesString = items
+            .map((i) => `('${i.product_id}', ${i.quantity})`)
+            .join(", ");
+        return await prisma.$executeRawUnsafe(`
+            UPDATE "products" AS p
+            SET stock = p.stock + v.quantity
+            FROM (VALUES ${valuesString}) AS v(id, quantity)
+            WHERE p.id = CAST(v.id AS text)
+        `);
+    }
+
 }
 
 export default ProductsModel;
