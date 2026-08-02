@@ -1,0 +1,86 @@
+syntax = "proto3";
+
+package product;
+
+service ProductService {
+  // Batch fetch price + stock for a list of product IDs
+  rpc GetProductsInfo (GetProductsInfoRequest) returns (GetProductsInfoResponse);
+
+  // Atomically decrement stock (used when order is placed)
+  rpc DecrementStock (DecrementStockRequest) returns (DecrementStockResponse);
+
+  // Atomically increment stock (used when order is deleted/cancelled)
+  rpc IncrementStock (IncrementStockRequest) returns (IncrementStockResponse);
+
+  // Validate stock availability + snapshot prices + decrement — all in one DB transaction.
+  // Replaces separate GetProductsInfo + DecrementStock calls for order creation.
+  rpc ValidateAndReserveStock (ValidateAndReserveStockRequest) returns (ValidateAndReserveStockResponse);
+}
+
+
+message GetProductsInfoRequest {
+  repeated string product_ids = 1;
+}
+
+message ProductInfo {
+  string product_id = 1;
+  string price      = 2;   // Decimal as string e.g. "12.50" to avoid float precision loss
+  int32  stock      = 3;
+  bool   found      = 4;   // false if product does not exist
+}
+
+message GetProductsInfoResponse {
+  repeated ProductInfo products = 1;
+}
+
+
+message StockUpdate {
+  string product_id = 1;
+  int32  quantity   = 2;
+}
+
+message DecrementStockRequest {
+  repeated StockUpdate updates = 1;
+}
+
+message DecrementStockResponse {
+  bool   success           = 1;
+  string failed_product_id = 2;
+  string message           = 3;
+}
+
+message IncrementStockRequest {
+  repeated StockUpdate updates = 1;  // reuses StockUpdate — same shape
+}
+
+message IncrementStockResponse {
+  bool   success           = 1;
+  string failed_product_id = 2;
+  string message           = 3;
+}
+
+// ── ValidateAndReserveStock ───────────────────────────────────────────────────
+// Single-trip replacement for GetProductsInfo + DecrementStock.
+// Validates existence, checks stock, snapshots prices, decrements — one transaction.
+
+message ReserveItem {
+  string product_id = 1;
+  int32  quantity   = 2;
+}
+
+message ReservedProductInfo {
+  string product_id = 1;
+  string price      = 2;   // snapshotted at reservation time
+  int32  quantity   = 3;
+}
+
+message ValidateAndReserveStockRequest {
+  repeated ReserveItem items = 1;
+}
+
+message ValidateAndReserveStockResponse {
+  bool   success           = 1;
+  string failed_product_id = 2;  // set on failure
+  string message           = 3;
+  repeated ReservedProductInfo reserved = 4;  // set on success — prices for the order-service
+}
