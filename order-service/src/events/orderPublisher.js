@@ -16,22 +16,24 @@ function publish(routingKey, payload) {
 // ── Public event publishers ───────────────────────────────────────────────────
 
 // Called after a successful order creation
-export const publishOrderPlaced = (order) =>
+export const publishOrderPlaced = (order, email) =>
     publish("order.placed", {
         event: "order.placed",
         orderId: order.id,
         userId: order.userId,
+        email,
         totalPrice: order.totalPrice.toString(),
         itemCount: order.orderItems.length,
     });
 
 // Called when order status changes to CANCELLED
 // product-service restores stock; notification-service sends email
-export const publishOrderCancelled = (order) =>
+export const publishOrderCancelled = (order, email) =>
     publish("order.cancelled", {
         event: "order.cancelled",
         orderId: order.id,
         userId: order.userId,
+        email,
         orderItems: order.orderItems.map((i) => ({
             productId: i.productId,
             quantity: i.quantity,
@@ -60,11 +62,12 @@ export const publishStockAdjust = (orderId, adjustments) =>
 
 // Called after any successful order update (status change, item change, etc.)
 // notification-service will consume this to send "Your order was updated" email
-export const publishOrderUpdated = (order) =>
+export const publishOrderUpdated = (order, email) =>
     publish("order.updated", {
         event: "order.updated",
         orderId: order.id,
         userId: order.userId,
+        email,
         status: order.status,
         totalPrice: order.totalPrice.toString(),
         orderItems: order.orderItems.map((i) => ({

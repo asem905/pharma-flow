@@ -19,7 +19,7 @@ export class AuthService {
             return appError.createErrorResponse("Invalid credentials", 401, "fail")
         }
 
-        const token = await genJWT({ id: user.id, role: user.role })
+        const token = await genJWT({ id: user.id, role: user.role, email: user.email })
         const { password: _, ...userWithoutPassword } = user
         return { token, user: userWithoutPassword }
     }
@@ -45,7 +45,7 @@ export class AuthService {
         // Add to bloom filter so future login attempts for this email hit the DB
         bloomFilter.addEmail(email)
 
-        const token = await genJWT({ id: newUser.id, role: newUser.role })
+        const token = await genJWT({ id: newUser.id, role: newUser.role, email: newUser.email })
         const { password: _, ...userWithoutPassword } = newUser
         return { token, user: userWithoutPassword }
     }

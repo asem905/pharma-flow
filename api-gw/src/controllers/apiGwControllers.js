@@ -160,4 +160,31 @@ const apiGwAuthController = new ApiGwAuthController();
 const apiGwProductController = new ApiGwProductController();
 const apiGwOrderController = new ApiGwOrderController();
 
-export { apiGwAuthController, apiGwProductController, apiGwOrderController };
+class ApiGwNotificationController {
+    getMyNotifications(req, res, next) {
+        axios.get(`${process.env.NOTIFICATION_SERVICE_URL}/notifications-service/api/v1/notifications`, {
+            headers: forwardUserHeader(req.currentUser),
+            params: req.query, // forward ?page & ?limit
+        })
+            .then(response => { res.json(response.data); })
+            .catch(error => { res.status(error.response?.status || 500).json(error.response?.data || { message: "Internal Server Error" }); });
+    }
+    getNotificationById(req, res, next) {
+        axios.get(`${process.env.NOTIFICATION_SERVICE_URL}/notifications-service/api/v1/notifications/${req.params.id}`, {
+            headers: forwardUserHeader(req.currentUser),
+        })
+            .then(response => { res.json(response.data); })
+            .catch(error => { res.status(error.response?.status || 500).json(error.response?.data || { message: "Internal Server Error" }); });
+    }
+    deleteNotification(req, res, next) {
+        axios.delete(`${process.env.NOTIFICATION_SERVICE_URL}/notifications-service/api/v1/notifications/${req.params.id}`, {
+            headers: forwardUserHeader(req.currentUser),
+        })
+            .then(response => { res.json(response.data); })
+            .catch(error => { res.status(error.response?.status || 500).json(error.response?.data || { message: "Internal Server Error" }); });
+    }
+}
+
+const apiGwNotificationController = new ApiGwNotificationController();
+
+export { apiGwAuthController, apiGwProductController, apiGwOrderController, apiGwNotificationController };

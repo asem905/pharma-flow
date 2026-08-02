@@ -4,7 +4,8 @@ import appError from "../utils/appError.js";
 
 export const createOrder = asyncHandler(async (req, res, next) => {
     const userId = req.currentUser.id;
-    const result = await OrdersService.createOrder(req.validatedBody, userId);
+    const email = req.currentUser.email;
+    const result = await OrdersService.createOrder(req.validatedBody, userId, email);
     if (result.statusCode) {
         return res.status(result.statusCode).json({
             status: "fail",
