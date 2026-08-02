@@ -101,8 +101,8 @@ export class OrdersService {
         return deleted;
     }
 
-    static async updateOrder(orderId, data) {
-        console.log(`[updateOrder] orderId=${orderId} | fields: ${Object.keys(data).join(", ")}`);
+    static async updateOrder(orderId, data, email) {
+        console.log(`[updateOrder] orderId=${orderId} email=${email} | fields: ${Object.keys(data).join(", ")}`);
 
         const order = await ordersModel.findOrder(orderId);
         if (!order) {
@@ -114,9 +114,7 @@ export class OrdersService {
         //  Status change to CANCELLED: restore all reserved stock
         if (data.status === "CANCELLED" && order.status !== "CANCELLED") {
             console.log(`[updateOrder] Status → CANCELLED | publishing stock restore for ${order.orderItems.length} item(s)`);
-            // email is not available here — updateOrder is an admin/system action, not user-initiated
-            // so we pass null and the consumer will skip the email notification gracefully
-            publishOrderCancelled(order, null);
+            publishOrderCancelled(order, email);
         }
 
         if (data.orderItems && order.status !== "CANCELLED") {
@@ -204,9 +202,9 @@ export class OrdersService {
 
         const updated = await ordersModel.updateOrder(orderId, data);
         console.log(`[updateOrder] ✔ Order updated: ${orderId} | status=${updated.status} total=$${updated.totalPrice}`);
-        // Notify notification-service (and any future consumers) of the change
-        // email not available in updateOrder (admin action) — pass null, consumer handles gracefully
-        publishOrderUpdated(updated, null);
+        // Fire-and-forget: publish() writes to amqplib's internal buffer and returns immediately.
+        // The HTTP response is sent before the broker even receives the bytes — no blocking.
+        publishOrderUpdated(updated, email);
         return updated;
     }
 

@@ -25,11 +25,17 @@ export async function startStockConsumer() {
     await channel.assertQueue(QUEUES.stockRestore, { durable: true });
     await channel.assertQueue(QUEUES.stockAdjust, { durable: true });
 
-    // Bind queues to exchange with routing key patterns
+    // Bind queues to exchange with routing key patterns in parallel
     // Both order.cancelled and order.deleted trigger a stock restore
-    await channel.bindQueue(QUEUES.stockRestore, EXCHANGE, "order.cancelled");
-    await channel.bindQueue(QUEUES.stockRestore, EXCHANGE, "order.deleted");
-    await channel.bindQueue(QUEUES.stockAdjust, EXCHANGE, "order.item.updated");
+    const bindings = [
+        { queue: QUEUES.stockRestore, key: "order.cancelled" },
+        { queue: QUEUES.stockRestore, key: "order.deleted" },
+        { queue: QUEUES.stockAdjust, key: "order.item.updated" },
+    ];
+
+    await Promise.all(bindings.map(({ queue, key }) =>
+        channel.bindQueue(queue, EXCHANGE, key)
+    ));
 
     // Process one message at a time — prevents DB overload under high traffic
     channel.prefetch(1);

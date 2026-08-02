@@ -35,7 +35,8 @@ export const deleteOrder = asyncHandler(async (req, res, next) => {
 
 export const updateOrder = asyncHandler(async (req, res, next) => {
     const orderId = req.params.id;
-    const result = await OrdersService.updateOrder(orderId, req.body);
+    const email = req.currentUser.email; // from JWT — available for both ADMIN and CUSTOMER
+    const result = await OrdersService.updateOrder(orderId, req.body, email);
     if (result.statusCode) {
         return res.status(result.statusCode).json({
             status: "fail",

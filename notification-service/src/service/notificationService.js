@@ -51,7 +51,7 @@ export class NotificationService {
      * Returns null if not found.
      */
     static async getById(id) {
-        return Notification.findById(id).lean();
+        return await Notification.findById(id).lean();
     }
 
     /**
@@ -59,6 +59,6 @@ export class NotificationService {
      * Returns the deleted document or null if not found.
      */
     static async deleteById(id) {
-        return Notification.findByIdAndDelete(id).lean();
+        return await Notification.findByIdAndDelete(id).lean();
     }
 }

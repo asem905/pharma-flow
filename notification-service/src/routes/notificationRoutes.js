@@ -1,6 +1,5 @@
 import express from "express";
 import extractCurrentUser from "../middlewares/extractCurrentUser.js";
-import { validateRole } from "../middlewares/validateRole.js";
 import { validateNotificationQuery, validateNotificationParams } from "../middlewares/notificationValidation.js";
 import {
     getMyNotifications,
