@@ -14,6 +14,6 @@ COPY . .
 
 USER node
 
-EXPOSE 3002
+EXPOSE 3003
 
 CMD ["node", "src/index.js"]

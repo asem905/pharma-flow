@@ -14,6 +14,6 @@ COPY . .
 
 USER node
 
-EXPOSE 3002
+EXPOSE 3005
 
-CMD ["node", "src/index.js"]
+CMD ["node", "src/server.js"]
