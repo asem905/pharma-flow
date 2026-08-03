@@ -1,0 +1,50 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+enum PaymentMethod {
+  CASH_ON_DELIVERY
+  VISA
+  MASTERCARD
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+}
+
+model Payment {
+  id                    String        @id @default(uuid())
+  
+  orderId               String        @map("order_id")
+  userId                String        @map("user_id")
+
+  amount                Decimal       @db.Decimal(10, 2)
+  currency              String        @default("EGP") @db.VarChar(5)
+
+  method                PaymentMethod
+  status                PaymentStatus @default(PENDING)
+
+  transactionReference  String?       @unique @map("transaction_reference") @db.VarChar(100)
+  idempotencyKey        String        @unique @map("idempotency_key") @db.VarChar(100)
+  failureReason         String?       @map("failure_reason") @db.VarChar(255)
+
+  createdAt             DateTime      @default(now()) @map("created_at")
+  updatedAt             DateTime      @updatedAt @map("updated_at")
+
+  @@index([orderId])
+  @@index([userId])
+  @@map("payments")
+}
