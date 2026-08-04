@@ -6,6 +6,9 @@ A production-ready **microservices backend** for a pharmaceutical e-commerce pla
 
 ## Table of Contents
 
+- [Running the Project](#running-the-project)
+  - [Option A: Local Development (Cloud Databases)](#option-a-local-development-cloud-databases)
+  - [Option B: Local Development (Docker Compose coming in future)](#option-b-local-development-docker-compose)
 - [Architecture Overview](#architecture-overview)
 - [Services](#services)
   - [API Gateway](#1-api-gateway-api-gw)
@@ -19,6 +22,51 @@ A production-ready **microservices backend** for a pharmaceutical e-commerce pla
   - [gRPC — Synchronous Internal Calls](#grpc--synchronous-internal-calls)
 - [Shared Proto Definitions](#shared-proto-definitions)
 - [Project Structure](#project-structure)
+
+---
+
+## Running the Project
+
+You can run this project in two ways: using the remote cloud databases configured in your `.env` files, or using a fully containerized local setup via Docker Compose.
+
+### Option A: Local Development (Cloud Databases)
+
+This option uses your local Node.js environment while connecting to the remote managed databases (Neon, Railway, MongoDB Atlas, Upstash Redis, etc.) configured in each service's `.env` file.
+
+**Prerequisites:**
+- Node.js (v20+)
+- Local RabbitMQ instance running on `amqp://localhost` (or update the `RABBITMQ_URL` in your `.env` files)
+
+**Steps:**
+1. Open a terminal for each service (API Gateway, Auth, Product, Order, Payment, Notification).
+2. In each directory, run:
+   ```bash
+   npm install
+   npm run dev
+   ```
+3. The API Gateway will be available at `http://localhost:3000/api/v1`.
+*(Note: Because this uses remote cloud databases, you may experience higher latency during local development depending on your geographical location).*
+
+### Option B: Local Development (Docker Compose coming in future)
+
+This is the recommended approach for local development to avoid geographical network latency. It spins up local instances of PostgreSQL, MySQL, MongoDB, Redis, and RabbitMQ, along with all the microservices, in a unified Docker network.
+
+**Prerequisites:**
+- Docker and Docker Compose installed.
+
+**Steps:**
+1. From the root of the project, run:
+   ```bash
+   docker compose up -d --build
+   ```
+2. Docker will automatically provision the databases (using `infra/postgres-init.sql`) and run Prisma migrations.
+3. The API Gateway will be available at `http://localhost:3000/api/v1`.
+
+**Useful Docker Commands:**
+- View all logs: `docker compose logs -f`
+- View specific service logs: `docker compose logs -f order-service`
+- Stop all services: `docker compose down`
+- Stop and wipe all database volumes (start fresh): `docker compose down -v`
 
 ---
 
