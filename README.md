@@ -25,38 +25,38 @@ A production-ready **microservices backend** for a pharmaceutical e-commerce pla
 ## Architecture Overview
 
 ```
-                        ┌──────────────────────────────────────────────────┐
-                        │                  API Gateway                      │
+                        ┌────────────────────────────────────────────────────┐
+                        │                  API Gateway                       │
                         │  :PORT  |  Rate Limiting  |  JWT Verify  |  Swagger│
-                        └──────────────┬───────────────────────────────────┘
+                        └──────────────┬─────────────────────────────────────┘
                                        │  HTTP proxy (http-proxy-middleware)
-         ┌─────────────────────────────┼──────────────────────────────────────┐
+         ┌─────────────────────────────┼──────────────────────────────────────┐────────────────────────
          │                             │                                      │
          ▼                             ▼                                      ▼
   ┌─────────────┐             ┌────────────────┐                    ┌──────────────────┐
-  │ Auth Service│             │ Product Service │                    │  Order Service   │
-  │  (Prisma)   │             │ (Prisma+Redis)  │                    │    (Prisma)      │
-  └─────────────┘             │  gRPC Server    │◄──── gRPC ────────│  gRPC Server     │
+  │ Auth Service│             │ Product Service│                    │  Order Service   │
+  │  (Prisma)   │             │ (Prisma+Redis) │                    │    (Prisma)      │
+  └─────────────┘             │  gRPC Server   │◄──── gRPC ──────── │  gRPC Server     │
                               └────────────────┘                    └──────────────────┘
                                        ▲                                      │
                                        │              ┌───────────────────────┘
                                        │              │
                               ┌────────────────┐      │         ┌──────────────────┐
                               │   RabbitMQ     │◄─────┘         │  Payment Service │
-                              │ pharmaflow.    │                 │    (Mongoose)    │
+                              │ pharmaflow.    │                │                  │
                               │   events       │◄─ payment.*────│  gRPC Client     │
-                              │ (topic exch.)  │                 └──────────────────┘
+                              │ (topic exch.)  │                └──────────────────┘
                               └────────────────┘
                                  │         │
                     order.*      │         │  payment.*
                     ┌────────────┘         └──────────────┐
                     ▼                                      ▼
-           ┌────────────────┐                   ┌──────────────────┐
-           │ Product Service│                   │Notification Svc  │
-           │ stockConsumer  │                   │  (MongoDB)       │
+           ┌────────────────┐                   ┌────────────────────┐
+           │ Product Service│                   │Notification Svc    │
+           │ stockConsumer  │                   │  (MongoDB)         │
            │ (stock.restore │                   │notificationConsumer│
-           │  stock.adjust) │                   │  (all events)    │
-           └────────────────┘                   └──────────────────┘
+           │  stock.adjust) │                   │  (all events)      │
+           └────────────────┘                   └────────────────────┘
 ```
 
 ---
