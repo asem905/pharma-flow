@@ -13,7 +13,7 @@ class ApiGwAuthController {
                 res.json(response.data);
             })
             .catch(error => {
-                res.status(error.response.status).json(error.response.data);
+                res.status(error.response?.status || 500).json(error.response?.data || { message: "Internal Server Error" });
             });
     }
     login(req, res, next) {
@@ -22,7 +22,7 @@ class ApiGwAuthController {
                 res.json(response.data);
             })
             .catch(error => {
-                res.status(error.response.status).json(error.response.data);
+                res.status(error.response?.status || 500).json(error.response?.data || { message: "Internal Server Error" });
             });
     }
 
@@ -32,7 +32,7 @@ class ApiGwAuthController {
                 res.json(response.data);
             })
             .catch(error => {
-                res.status(error.response.status).json(error.response.data);
+                res.status(error.response?.status || 500).json(error.response?.data || { message: "Internal Server Error" });
             });
     }
 }
@@ -43,70 +43,70 @@ class ApiGwProductController {
             headers: forwardUserHeader(req.currentUser)
         })
             .then(response => { res.json(response.data); })
-            .catch(error => { res.status(error.response.status).json(error.response.data); });
+            .catch(error => { res.status(error.response?.status || 500).json(error.response?.data || { message: "Internal Server Error" }); });
     }
     deleteProduct(req, res, next) {
         axios.delete(`${process.env.PRODUCT_SERVICE_URL}/products/${req.params.id}`, {
             headers: forwardUserHeader(req.currentUser)
         })
             .then(response => { res.json(response.data); })
-            .catch(error => { res.status(error.response.status).json(error.response.data); });
+            .catch(error => { res.status(error.response?.status || 500).json(error.response?.data || { message: "Internal Server Error" }); });
     }
     updateProduct(req, res, next) {
         axios.put(`${process.env.PRODUCT_SERVICE_URL}/products/${req.params.id}`, req.body, {
             headers: forwardUserHeader(req.currentUser)
         })
             .then(response => { res.json(response.data); })
-            .catch(error => { res.status(error.response.status).json(error.response.data); });
+            .catch(error => { res.status(error.response?.status || 500).json(error.response?.data || { message: "Internal Server Error" }); });
     }
     findProduct(req, res, next) {
         axios.get(`${process.env.PRODUCT_SERVICE_URL}/products/${req.params.id}`, {
             headers: forwardUserHeader(req.currentUser)
         })
             .then(response => { res.json(response.data); })
-            .catch(error => { res.status(error.response.status).json(error.response.data); });
+            .catch(error => { res.status(error.response?.status || 500).json(error.response?.data || { message: "Internal Server Error" }); });
     }
     findAllProducts(req, res, next) {
         axios.get(`${process.env.PRODUCT_SERVICE_URL}/products`, {
             headers: forwardUserHeader(req.currentUser)
         })
             .then(response => { res.json(response.data); })
-            .catch(error => { res.status(error.response.status).json(error.response.data); });
+            .catch(error => { res.status(error.response?.status || 500).json(error.response?.data || { message: "Internal Server Error" }); });
     }
     createCategory(req, res, next) {
         axios.post(`${process.env.PRODUCT_SERVICE_URL}/categories`, req.body, {
             headers: forwardUserHeader(req.currentUser)
         })
             .then(response => { res.json(response.data); })
-            .catch(error => { res.status(error.response.status).json(error.response.data); });
+            .catch(error => { res.status(error.response?.status || 500).json(error.response?.data || { message: "Internal Server Error" }); });
     }
     deleteCategory(req, res, next) {
         axios.delete(`${process.env.PRODUCT_SERVICE_URL}/categories/${req.params.id}`, {
             headers: forwardUserHeader(req.currentUser)
         })
             .then(response => { res.json(response.data); })
-            .catch(error => { res.status(error.response.status).json(error.response.data); });
+            .catch(error => { res.status(error.response?.status || 500).json(error.response?.data || { message: "Internal Server Error" }); });
     }
     updateCategory(req, res, next) {
         axios.put(`${process.env.PRODUCT_SERVICE_URL}/categories/${req.params.id}`, req.body, {
             headers: forwardUserHeader(req.currentUser)
         })
             .then(response => { res.json(response.data); })
-            .catch(error => { res.status(error.response.status).json(error.response.data); });
+            .catch(error => { res.status(error.response?.status || 500).json(error.response?.data || { message: "Internal Server Error" }); });
     }
     findCategory(req, res, next) {
         axios.get(`${process.env.PRODUCT_SERVICE_URL}/categories/${req.params.id}`, {
             headers: forwardUserHeader(req.currentUser)
         })
             .then(response => { res.json(response.data); })
-            .catch(error => { res.status(error.response.status).json(error.response.data); });
+            .catch(error => { res.status(error.response?.status || 500).json(error.response?.data || { message: "Internal Server Error" }); });
     }
     findAllCategories(req, res, next) {
         axios.get(`${process.env.PRODUCT_SERVICE_URL}/categories`, {
             headers: forwardUserHeader(req.currentUser)
         })
             .then(response => { res.json(response.data); })
-            .catch(error => { res.status(error.response.status).json(error.response.data); });
+            .catch(error => { res.status(error.response?.status || 500).json(error.response?.data || { message: "Internal Server Error" }); });
     }
 }
 
@@ -187,4 +187,37 @@ class ApiGwNotificationController {
 
 const apiGwNotificationController = new ApiGwNotificationController();
 
-export { apiGwAuthController, apiGwProductController, apiGwOrderController, apiGwNotificationController };
+class ApiGwPaymentController {
+    createPayment(req, res, next) {
+        axios.post(`${process.env.PAYMENT_SERVICE_URL}/`, req.body, {
+            headers: forwardUserHeader(req.currentUser)
+        })
+            .then(response => { res.json(response.data); })
+            .catch(error => { res.status(error.response?.status || 500).json(error.response?.data || { message: "Internal Server Error" }); });
+    }
+    getMyPayments(req, res, next) {
+        axios.get(`${process.env.PAYMENT_SERVICE_URL}/me`, {
+            headers: forwardUserHeader(req.currentUser)
+        })
+            .then(response => { res.json(response.data); })
+            .catch(error => { res.status(error.response?.status || 500).json(error.response?.data || { message: "Internal Server Error" }); });
+    }
+    getPaymentsByOrder(req, res, next) {
+        axios.get(`${process.env.PAYMENT_SERVICE_URL}/order/${req.params.orderId}`, {
+            headers: forwardUserHeader(req.currentUser)
+        })
+            .then(response => { res.json(response.data); })
+            .catch(error => { res.status(error.response?.status || 500).json(error.response?.data || { message: "Internal Server Error" }); });
+    }
+    getPaymentById(req, res, next) {
+        axios.get(`${process.env.PAYMENT_SERVICE_URL}/${req.params.id}`, {
+            headers: forwardUserHeader(req.currentUser)
+        })
+            .then(response => { res.json(response.data); })
+            .catch(error => { res.status(error.response?.status || 500).json(error.response?.data || { message: "Internal Server Error" }); });
+    }
+}
+
+const apiGwPaymentController = new ApiGwPaymentController();
+
+export { apiGwAuthController, apiGwProductController, apiGwOrderController, apiGwNotificationController, apiGwPaymentController };

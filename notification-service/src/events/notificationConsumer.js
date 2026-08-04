@@ -14,11 +14,11 @@ const BINDINGS = [
 
 // Maps a routing key → notification type enum value
 const TYPE_MAP = {
-    "order.placed":    "ORDER_PLACED",
-    "order.cancelled": "ORDER_CANCELLED",
-    "order.updated":   "ORDER_UPDATED",
-    "payment.success": "PAYMENT_SUCCESS",
-    "payment.failed":  "PAYMENT_FAILED",
+    "order.placed":     "ORDER_PLACED",
+    "order.cancelled":  "ORDER_CANCELLED",
+    "order.updated":    "ORDER_UPDATED",
+    "payment.success":  "PAYMENT_SUCCESS",
+    "payment.failed":   "PAYMENT_FAILED",
 };
 
 // Maps a routing key → human-readable title + message builder
@@ -35,10 +35,13 @@ const MESSAGE_BUILDERS = {
         title: "Order Updated",
         message: `Your order #${payload.orderId} status is now ${payload.status}. Total: $${payload.totalPrice}.`,
     }),
-    "payment.success": (payload) => ({
-        title: "Payment Successful",
-        message: `Your payment of $${payload.amount} for order #${payload.orderId} was processed successfully.`,
-    }),
+    "payment.success": (payload) => {
+        const base = `Your payment of $${payload.amount} for order #${payload.orderId} was processed successfully.`;
+        const credits = payload.remainingAmount > 0
+            ? ` You overpaid by $${payload.remainingAmount} — this amount has been stored as account credits for future orders.`
+            : "";
+        return { title: "Payment Successful", message: base + credits };
+    },
     "payment.failed": (payload) => ({
         title: "Payment Failed",
         message: `Your payment of $${payload.amount} for order #${payload.orderId} failed. Please retry or use a different payment method.`,

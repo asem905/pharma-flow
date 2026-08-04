@@ -24,6 +24,7 @@ model users {
   phone      String?    @db.VarChar(20)
   address    String?    
   role       user_roles @default(CUSTOMER)
+  budget     Float?     @default(0)
   created_at DateTime   @default(now())
   updated_at DateTime   @updatedAt
 }
