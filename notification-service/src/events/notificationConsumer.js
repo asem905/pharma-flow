@@ -8,6 +8,8 @@ const BINDINGS = [
     "order.placed",
     "order.cancelled",
     "order.updated",
+    "payment.success",
+    "payment.failed",
 ];
 
 // Maps a routing key → notification type enum value
@@ -15,6 +17,8 @@ const TYPE_MAP = {
     "order.placed":    "ORDER_PLACED",
     "order.cancelled": "ORDER_CANCELLED",
     "order.updated":   "ORDER_UPDATED",
+    "payment.success": "PAYMENT_SUCCESS",
+    "payment.failed":  "PAYMENT_FAILED",
 };
 
 // Maps a routing key → human-readable title + message builder
@@ -30,6 +34,14 @@ const MESSAGE_BUILDERS = {
     "order.updated": (payload) => ({
         title: "Order Updated",
         message: `Your order #${payload.orderId} status is now ${payload.status}. Total: $${payload.totalPrice}.`,
+    }),
+    "payment.success": (payload) => ({
+        title: "Payment Successful",
+        message: `Your payment of $${payload.amount} for order #${payload.orderId} was processed successfully.`,
+    }),
+    "payment.failed": (payload) => ({
+        title: "Payment Failed",
+        message: `Your payment of $${payload.amount} for order #${payload.orderId} failed. Please retry or use a different payment method.`,
     }),
 };
 

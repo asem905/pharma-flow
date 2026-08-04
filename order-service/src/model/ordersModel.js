@@ -67,6 +67,12 @@ class OrdersModel {
             orderBy: { createdAt: "desc" },
         });
     }
+
+    async findById(id) {
+        return await prisma.order.findUnique({
+            where: { id },
+        });
+    }
 }
 
 export default new OrdersModel();

@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import router from "./routes/routes.js";
 import dotenv from "dotenv";
+import { connectRabbitMQ } from "./config/rabbitmq.js";
 dotenv.config();
 const app = express();
 
@@ -15,6 +16,8 @@ app.use(express.urlencoded({ extended: true }));
 app.use("/payment-service/api/v1", router);
 
 const startServer = async () => {
+    await connectRabbitMQ();   // must be ready before any payment publish calls
+
     app.listen(process.env.PORT, () => {
         console.log(`payment service running at : http://localhost:${process.env.PORT}/`);
     });
