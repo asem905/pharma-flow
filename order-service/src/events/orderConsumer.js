@@ -41,10 +41,7 @@ export async function startOrderConsumer() {
 
             if (routingKey === "payment.success") {
                 // Mark the order as CONFIRMED once payment succeeds
-                await ordersModel.update({
-                    where: { id: orderId },
-                    data: { status: "CONFIRMED" },
-                });
+                await ordersModel.updateOrder(orderId, { status: "CONFIRMED" });
                 console.log(`[Consumer] ✔ Order ${orderId} marked CONFIRMED after payment.success`);
 
             } else if (routingKey === "payment.failed") {

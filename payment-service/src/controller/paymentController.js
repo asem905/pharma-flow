@@ -6,8 +6,10 @@ import appError from "../utils/appError.js";
 const paymentService = new PaymentService();
 
 export const createPayment = asyncHandler(async (req, res) => {
+    const { paymentMethod, ...rest } = req.body;
     const results = await paymentService.createPayment({
-        ...req.body,
+        ...rest,
+        method: paymentMethod,
         userId: req.currentUser.id,
         email: req.currentUser.email,   // threaded so service can publish events
     });

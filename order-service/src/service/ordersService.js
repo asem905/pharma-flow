@@ -103,7 +103,6 @@ export class OrdersService {
 
     static async updateOrder(orderId, data, email) {
         console.log(`[updateOrder] orderId=${orderId} email=${email} | fields: ${Object.keys(data).join(", ")}`);
-
         const order = await ordersModel.findOrder(orderId);
         if (!order) {
             console.warn(`[updateOrder] Order not found: ${orderId}`);

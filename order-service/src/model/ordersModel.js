@@ -4,7 +4,6 @@ class OrdersModel {
     async findByIdempotencyKey(idempotencyKey) {
         return await prisma.order.findUnique({
             where: { idempotencyKey },
-            include: { orderItems: true },
         });
     }
 

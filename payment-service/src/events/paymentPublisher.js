@@ -15,14 +15,15 @@ function publish(routingKey, payload) {
 
 // ── Public event publishers ───────────────────────────────────────────────────
 
-export const publishPaymentSuccess = (payment, email) =>
+export const publishPaymentSuccess = (payment, email, remainingAmount = 0) =>
     publish("payment.success", {
         event: "payment.success",
         orderId: payment.orderId,
         userId: payment.userId,
         email,
         amount: payment.amount.toString(),
-        paymentMethod: payment.paymentMethod,
+        paymentMethod: payment.method,
+        remainingAmount,
     });
 
 export const publishPaymentFailed = (payment, email) =>
@@ -32,7 +33,7 @@ export const publishPaymentFailed = (payment, email) =>
         userId: payment.userId,
         email,
         amount: payment.amount.toString(),
-        paymentMethod: payment.paymentMethod,
+        paymentMethod: payment.method,
     });
 
 export const publishPaymentRefunded = (payment) =>
@@ -41,5 +42,16 @@ export const publishPaymentRefunded = (payment) =>
         orderId: payment.orderId,
         userId: payment.userId,
         amount: payment.amount.toString(),
-        paymentMethod: payment.paymentMethod,
+        paymentMethod: payment.method,
+    });
+
+export const publishPaymentOverpaid = (payment, email, remainingAmount) =>
+    publish("payment.overpaid", {
+        event: "payment.overpaid",
+        orderId: payment.orderId,
+        userId: payment.userId,
+        email,
+        amount: payment.amount.toString(),
+        paymentMethod: payment.method,
+        remainingAmount,     // credits to be added to user budget
     });

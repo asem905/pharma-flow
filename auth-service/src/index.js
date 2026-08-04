@@ -4,6 +4,8 @@ import router from "./routes/routes.js";
 import dotenv from "dotenv";
 import bloomFilter from "./service/bloomFilterService.js";
 import usersModel from "./model/usersModel.js";
+import { connectRabbitMQ } from "./config/rabbitmq.js";
+import { startAuthConsumer } from "./events/authConsumer.js";
 dotenv.config();
 const app = express();
 
@@ -22,6 +24,9 @@ const startServer = async () => {
     console.log("Seeding bloom filter with emails:", emails);
 
     bloomFilter.initialize(emails);
+
+    await connectRabbitMQ();
+    await startAuthConsumer();
 
     app.listen(process.env.PORT, () => {
         console.log(`Auth service running at : http://localhost:${process.env.PORT}/`);
