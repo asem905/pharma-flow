@@ -2,6 +2,7 @@ import express from "express";
 import { authRoutes } from "./authroutes.js";
 import { productsCategoriesRoutes } from "./productsCategoriesRoutes.js";
 import { ordersRoutes } from "./ordersRoutes.js";
+import { notificationsRoutes } from "./notificationsRoutes.js";
 import verifyToken from "../middlewares/verifyToken.js";
 const router = express.Router();
 
@@ -17,6 +18,7 @@ router.use("/auth", authRoutes);
 router.use("/", verifyToken, productsCategoriesRoutes);
 
 router.use("/orders", verifyToken, ordersRoutes);
-// router.use("/payments", verifyToken, paymentsRoutes);
+
+router.use("/notifications", verifyToken, notificationsRoutes);
 
 export default router;

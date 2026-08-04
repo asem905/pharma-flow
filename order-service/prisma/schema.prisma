@@ -39,6 +39,7 @@ model OrderItem {
 }
 enum OrderStatus {
     PENDING
+    PAYMENT_FAILURE
     CONFIRMED
     CANCELLED
 }

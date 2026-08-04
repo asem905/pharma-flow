@@ -11,9 +11,9 @@ import {
 
 export class OrdersService {
 
-    static async createOrder(data, userId) {
+    static async createOrder(data, userId, email) {
         const { idempotencyKey, orderItems } = data;
-        console.log(`[createOrder] user=${userId} | items=${orderItems.length} | key=${idempotencyKey}`);
+        console.log(`[createOrder] user=${userId} email=${email} | items=${orderItems.length} | key=${idempotencyKey}`);
 
         //  Idempotency check
         const existing = await ordersModel.findByIdempotencyKey(idempotencyKey);
@@ -64,7 +64,7 @@ export class OrdersService {
         try {
             const order = await ordersModel.createOrder(userId, idempotencyKey, totalPrice, enrichedItems);
             console.log(`[createOrder] ✔ Order created: id=${order.id} total=$${order.totalPrice}`);
-            publishOrderPlaced(order);
+            publishOrderPlaced(order, email);
             return order;
         } catch (err) {
             console.error("[createOrder] ✖ DB write failed — rolling back stock via RabbitMQ:", err.message);
@@ -101,8 +101,8 @@ export class OrdersService {
         return deleted;
     }
 
-    static async updateOrder(orderId, data) {
-        console.log(`[updateOrder] orderId=${orderId} | fields: ${Object.keys(data).join(", ")}`);
+    static async updateOrder(orderId, data, email) {
+        console.log(`[updateOrder] orderId=${orderId} email=${email} | fields: ${Object.keys(data).join(", ")}`);
 
         const order = await ordersModel.findOrder(orderId);
         if (!order) {
@@ -114,7 +114,7 @@ export class OrdersService {
         //  Status change to CANCELLED: restore all reserved stock
         if (data.status === "CANCELLED" && order.status !== "CANCELLED") {
             console.log(`[updateOrder] Status → CANCELLED | publishing stock restore for ${order.orderItems.length} item(s)`);
-            publishOrderCancelled(order);
+            publishOrderCancelled(order, email);
         }
 
         if (data.orderItems && order.status !== "CANCELLED") {
@@ -202,8 +202,9 @@ export class OrdersService {
 
         const updated = await ordersModel.updateOrder(orderId, data);
         console.log(`[updateOrder] ✔ Order updated: ${orderId} | status=${updated.status} total=$${updated.totalPrice}`);
-        // Notify notification-service (and any future consumers) of the change
-        publishOrderUpdated(updated);
+        // Fire-and-forget: publish() writes to amqplib's internal buffer and returns immediately.
+        // The HTTP response is sent before the broker even receives the bytes — no blocking.
+        publishOrderUpdated(updated, email);
         return updated;
     }
 

@@ -4,6 +4,8 @@ import router from "./routes/routes.js";
 import dotenv from "dotenv";
 import extractCurrentUser from "./middlewares/extractCurrentUser.js";
 import { connectRabbitMQ } from "./config/rabbitmq.js";
+import { startGrpcServer } from "./grpc/orderGrpcServer.js";
+import { startOrderConsumer } from "./events/orderConsumer.js";
 dotenv.config();
 const app = express();
 
@@ -31,6 +33,8 @@ app.use("/order-service/api/v1", router);
 
 const startServer = async () => {
     await connectRabbitMQ();
+    await startOrderConsumer();   // listen for payment.success / payment.failed
+    startGrpcServer();
 
     app.listen(process.env.PORT, () => {
         console.log(`Order service running at : http://localhost:${process.env.PORT}/`);

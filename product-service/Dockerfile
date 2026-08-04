@@ -4,7 +4,7 @@ WORKDIR /app
 
 COPY package*.json ./
 
-RUN npm install
+RUN npm ci --omit=dev
 
 COPY prisma ./prisma/
 
@@ -12,6 +12,8 @@ RUN npx prisma generate
 
 COPY . .
 
+USER node
+
 EXPOSE 3002
 
-CMD ["npm", "start"]
+CMD ["node", "src/index.js"]
