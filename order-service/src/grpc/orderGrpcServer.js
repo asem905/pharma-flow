@@ -33,6 +33,7 @@ const GetOrderById = async (call, callback) => {
         });
     }
     catch (error) {
+        console.error("[gRPC] GetOrderById error:", error);
         callback({ code: grpc.status.INTERNAL, message: error.message });
     }
 };

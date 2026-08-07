@@ -20,8 +20,8 @@ const createOrderSchema = z.object({
 // Query params are always strings — use z.coerce to cast types
 const orderQuerySchema = z.object({
     status: z
-        .enum(["PENDING", "CONFIRMED", "CANCELLED"], {
-            message: "status must be one of: PENDING, CONFIRMED, CANCELLED",
+        .enum(["PENDING", "CONFIRMED", "CANCELLED", "PAYMENT_FAILURE"], {
+            message: "status must be one of: PENDING, CONFIRMED, CANCELLED, PAYMENT_FAILURE",
         })
         .optional(),
     // ISO date strings e.g. 2024-01-15  →  coerced to Date objects

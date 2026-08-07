@@ -28,3 +28,15 @@ model users {
   created_at DateTime   @default(now())
   updated_at DateTime   @updatedAt
 }
+
+// Idempotency ledger for budget reversals — one row per refund_key, prevents double-credit.
+model refund_ledger {
+  id         String   @id @default(uuid())
+  // "refund:orderId:userId:originalIdempotencyKey"
+  refund_key String   @unique @map("refund_key") @db.VarChar(255)
+  user_id    String   @map("user_id") @db.VarChar(36)
+  amount     Float
+  applied_at DateTime @default(now()) @map("applied_at")
+
+  @@index([user_id])
+}

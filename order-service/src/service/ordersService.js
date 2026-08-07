@@ -217,9 +217,9 @@ export class OrdersService {
         return order;
     }
 
-    static async findAllOrders() {
-        console.log(`[findAllOrders] Fetching all orders`);
-        return await ordersModel.findAllOrders();
+    static async findAllOrders(filters = {}) {
+        console.log(`[findAllOrders] Fetching all orders | filters:`, filters);
+        return await ordersModel.findAllOrders(filters);
     }
 
     static async findOrdersForCustomer(customerId, filters = {}) {

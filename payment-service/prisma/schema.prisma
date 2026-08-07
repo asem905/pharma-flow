@@ -1,8 +1,6 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider = "prisma-client-js"
   output   = "../src/generated/prisma"
@@ -16,6 +14,7 @@ enum PaymentMethod {
   CASH_ON_DELIVERY
   VISA
   MASTERCARD
+  BUDGET_CREDITS
 }
 
 enum PaymentStatus {
@@ -25,26 +24,52 @@ enum PaymentStatus {
   REFUNDED
 }
 
+enum RefundStatus {
+  PENDING
+  REFUNDED
+}
+
 model Payment {
-  id                    String        @id @default(uuid())
-  
-  orderId               String        @map("order_id")
-  userId                String        @map("user_id")
+  id                   String        @id @default(uuid())
 
-  amount                Decimal       @db.Decimal(10, 2)
-  currency              String        @default("EGP") @db.VarChar(5)
+  orderId              String        @map("order_id")
+  userId               String        @map("user_id")
 
-  method                PaymentMethod
-  status                PaymentStatus @default(PENDING)
+  amount               Decimal       @db.Decimal(10, 2)
+  currency             String        @default("EGP") @db.VarChar(5)
 
-  transactionReference  String?       @unique @map("transaction_reference") @db.VarChar(100)
-  idempotencyKey        String        @unique @map("idempotency_key") @db.VarChar(100)
-  failureReason         String?       @map("failure_reason") @db.VarChar(255)
+  method               PaymentMethod
+  status               PaymentStatus @default(PENDING)
 
-  createdAt             DateTime      @default(now()) @map("created_at")
-  updatedAt             DateTime      @updatedAt @map("updated_at")
+  transactionReference String?       @unique @map("transaction_reference") @db.VarChar(100)
+  idempotencyKey       String        @unique @map("idempotency_key") @db.VarChar(100)
+
+  createdAt            DateTime      @default(now()) @map("created_at")
+  updatedAt            DateTime      @updatedAt @map("updated_at")
+
+  // optional satellite — only present when status = FAILED
+  failure              PaymentFailure?
 
   @@index([orderId])
   @@index([userId])
   @@map("payments")
+}
+
+model PaymentFailure {
+  id        String @id @default(uuid())
+
+  paymentId String  @unique @map("payment_id") @db.VarChar(36)
+  payment   Payment @relation(fields: [paymentId], references: [id])
+  originalIdempotencyKey String @map("original_idempotency_key") @db.VarChar(100)
+
+  failureReason String?      @map("failure_reason") @db.VarChar(255)
+
+  refundAmount   Decimal?     @map("refund_amount") @db.Decimal(10, 2)
+  refundStatus   RefundStatus? @map("refund_status")
+  refundAttempts Int          @default(0) @map("refund_attempts")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([originalIdempotencyKey])
+  @@map("payment_failures")
 }

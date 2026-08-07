@@ -42,7 +42,6 @@ export const publishPaymentRefunded = (payment) =>
         orderId: payment.orderId,
         userId: payment.userId,
         amount: payment.amount.toString(),
-        paymentMethod: payment.method,
     });
 
 export const publishPaymentOverpaid = (payment, email, remainingAmount) =>

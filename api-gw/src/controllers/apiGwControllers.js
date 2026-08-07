@@ -141,7 +141,8 @@ class ApiGwOrderController {
     }
     findAllOrders(req, res, next) {
         axios.get(`${process.env.ORDER_SERVICE_URL}/orders`, {
-            headers: forwardUserHeader(req.currentUser)
+            headers: forwardUserHeader(req.currentUser),
+            params: req.query
         })
             .then(response => { res.json(response.data); })
             .catch(error => { res.status(error.response?.status || 500).json(error.response?.data || { message: "Internal Server Error" }); });

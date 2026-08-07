@@ -4,7 +4,7 @@ import appError from "../utils/appError.js";
 const paymentBodySchema = z.object({
     orderId: z.string().uuid("Invalid order ID format"),
     amount: z.number().positive("Amount must be positive"),
-    paymentMethod: z.enum(["CASH_ON_DELIVERY", "VISA", "MASTERCARD"]),
+    paymentMethod: z.enum(["CASH_ON_DELIVERY", "VISA", "MASTERCARD", "BUDGET_CREDITS"]),
     idempotencyKey: z.string().min(1, "Idempotency key is required"),
     currency: z.string().optional()
 });

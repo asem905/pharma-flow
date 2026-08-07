@@ -22,6 +22,6 @@ router.delete("/orders/:id", validateRole("ADMIN", "CUSTOMER"), deleteOrder);
 router.put("/orders/:id", validateRole("ADMIN", "CUSTOMER"), updateOrder);
 router.get("/orders/customer/:id", validateRole("CUSTOMER", "ADMIN"), validateOrderQuery, findOrdersForCustomer);
 router.get("/orders/:id", validateRole("ADMIN", "CUSTOMER"), findOrder);
-router.get("/orders", validateRole("ADMIN"), findAllOrders);
+router.get("/orders", validateRole("ADMIN"), validateOrderQuery, findAllOrders);
 
 export default router;
