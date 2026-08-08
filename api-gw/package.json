@@ -24,7 +24,8 @@
     "opossum": "^5.0.1",
     "ratelimiter": "^3.4.1",
     "swagger-jsdoc": "^6.3.0",
-    "swagger-ui-express": "^5.0.1"
+    "swagger-ui-express": "^5.0.1",
+    "winston": "^3.19.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"

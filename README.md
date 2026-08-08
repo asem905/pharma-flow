@@ -1,6 +1,6 @@
 # PharmaFlow — Backend Monorepo
 
-A production-ready **microservices backend** for a pharmaceutical e-commerce platform. Built with Node.js / Express, using a combination of synchronous gRPC calls and asynchronous RabbitMQ event-driven communication.
+A production-ready **microservices backend** for a pharmaceutical e-commerce platform. Built with Node.js / Express, using synchronous gRPC calls, asynchronous RabbitMQ event-driven communication, circuit breakers for resilience, and a centralized structured logging pipeline feeding Grafana Loki.
 
 ---
 
@@ -8,8 +8,10 @@ A production-ready **microservices backend** for a pharmaceutical e-commerce pla
 
 - [Running the Project](#running-the-project)
   - [Option A: Local Development (Cloud Databases)](#option-a-local-development-cloud-databases)
-  - [Option B: Local Development (Docker Compose coming in future)](#option-b-local-development-docker-compose)
+  - [Option B: Logging Stack Only (Docker Compose)](#option-b-logging-stack-only-docker-compose)
 - [Architecture Overview](#architecture-overview)
+- [Observability — Centralized Logging](#observability--centralized-logging)
+- [Resilience — Circuit Breakers](#resilience--circuit-breakers)
 - [Services](#services)
   - [API Gateway](#1-api-gateway-api-gw)
   - [Auth Service](#2-auth-service)
@@ -17,6 +19,7 @@ A production-ready **microservices backend** for a pharmaceutical e-commerce pla
   - [Order Service](#4-order-service)
   - [Payment Service](#5-payment-service)
   - [Notification Service](#6-notification-service)
+  - [Logging Service](#7-logging-service)
 - [Communication Patterns](#communication-patterns)
   - [RabbitMQ — Async Event Bus](#rabbitmq--async-event-bus)
   - [gRPC — Synchronous Internal Calls](#grpc--synchronous-internal-calls)
@@ -27,85 +30,176 @@ A production-ready **microservices backend** for a pharmaceutical e-commerce pla
 
 ## Running the Project
 
-You can run this project in two ways: using the remote cloud databases configured in your `.env` files, or using a fully containerized local setup via Docker Compose.
-
 ### Option A: Local Development (Cloud Databases)
 
 This option uses your local Node.js environment while connecting to the remote managed databases (Neon, Railway, MongoDB Atlas, Upstash Redis, etc.) configured in each service's `.env` file.
 
 **Prerequisites:**
 - Node.js (v20+)
-- Local RabbitMQ instance running on `amqp://localhost` (or update the `RABBITMQ_URL` in your `.env` files)
+- Local RabbitMQ instance running on `amqp://localhost`
+- *(Optional)* Docker Desktop — required only to run Loki + Grafana for observability
 
 **Steps:**
-1. Open a terminal for each service (API Gateway, Auth, Product, Order, Payment, Notification).
-2. In each directory, run:
+1. Open a terminal for each service and run:
    ```bash
    npm install
    npm run dev
    ```
+2. Start services in this order: `logging-service` → all others.
 3. The API Gateway will be available at `http://localhost:3000/api/v1`.
-*(Note: Because this uses remote cloud databases, you may experience higher latency during local development depending on your geographical location).*
+4. Swagger UI is available at `http://localhost:3000/api/v1/docs`.
 
-### Option B: Local Development (Docker Compose coming in future)
+*(Note: Because this uses remote cloud databases, you may experience higher latency during local development depending on your geographical location.)*
 
-This is the recommended approach for local development to avoid geographical network latency. It spins up local instances of PostgreSQL, MySQL, MongoDB, Redis, and RabbitMQ, along with all the microservices, in a unified Docker network.
+### Option B: Logging Stack Only (Docker Compose)
+
+Spin up **only** Loki and Grafana without starting the full application stack. This is the recommended way to enable observability during local development.
 
 **Prerequisites:**
 - Docker and Docker Compose installed.
 
 **Steps:**
+```bash
+docker compose -f docker-compose.logging.yml up -d
+```
+
+| Service | URL |
+|---------|-----|
+| Grafana UI | `http://localhost:3001` (admin / admin) |
+| Loki HTTP API | `http://localhost:3100` |
+
+After starting, **add Loki as a data source in Grafana:**
+1. Go to **Connections → Data Sources → Add data source → Loki**.
+2. Set URL to `http://loki:3100`.
+3. Click **Save & test**.
+
+Then use the **Explore** tab with a LogQL query like `{service="payment-service"}` to view structured logs.
+
+### Option C: Full Local Development (Docker Compose coming in future)
+
+This will be the recommended approach for full local development to avoid geographical network latency. It will spin up local instances of PostgreSQL, MySQL, MongoDB, Redis, and RabbitMQ, along with all the microservices, in a unified Docker network.
+
+**Steps (Planned):**
 1. From the root of the project, run:
    ```bash
    docker compose up -d --build
    ```
-2. Docker will automatically provision the databases (using `infra/postgres-init.sql`) and run Prisma migrations.
+2. Docker will automatically provision the databases and run Prisma migrations.
 3. The API Gateway will be available at `http://localhost:3000/api/v1`.
-
-**Useful Docker Commands:**
-- View all logs: `docker compose logs -f`
-- View specific service logs: `docker compose logs -f order-service`
-- Stop all services: `docker compose down`
-- Stop and wipe all database volumes (start fresh): `docker compose down -v`
 
 ---
 
 ## Architecture Overview
 
 ```
-                        ┌──────────────────────────────────────────────────┐
-                        │                  API Gateway                      │
-                        │  :PORT  |  Rate Limiting  |  JWT Verify  |  Swagger│
-                        └──────────────┬───────────────────────────────────┘
-                                       │  HTTP proxy (http-proxy-middleware)
-         ┌─────────────────────────────┼──────────────────────────────────────┐
-         │                             │                                      │
-         ▼                             ▼                                      ▼
-  ┌─────────────┐             ┌────────────────┐                    ┌──────────────────┐
-  │ Auth Service│             │ Product Service │                    │  Order Service   │
-  │  (Prisma)   │             │ (Prisma+Redis)  │                    │    (Prisma)      │
-  └─────────────┘             │  gRPC Server    │◄──── gRPC ────────│  gRPC Server     │
-                              └────────────────┘                    └──────────────────┘
-                                       ▲                                      │
-                                       │              ┌───────────────────────┘
-                                       │              │
-                              ┌────────────────┐      │         ┌──────────────────┐
-                              │   RabbitMQ     │◄─────┘         │  Payment Service │
-                              │ pharmaflow.    │                 │    (Mongoose)    │
-                              │   events       │◄─ payment.*────│  gRPC Client     │
-                              │ (topic exch.)  │                 └──────────────────┘
-                              └────────────────┘
-                                 │         │
-                    order.*      │         │  payment.*
-                    ┌────────────┘         └──────────────┐
-                    ▼                                      ▼
-           ┌────────────────┐                   ┌──────────────────┐
-           │ Product Service│                   │Notification Svc  │
-           │ stockConsumer  │                   │  (MongoDB)       │
-           │ (stock.restore │                   │notificationConsumer│
-           │  stock.adjust) │                   │  (all events)    │
-           └────────────────┘                   └──────────────────┘
+                        ┌──────────────────────────────────────────────────────────────┐
+                        │                        API Gateway                            │
+                        │  :3000  |  Rate Limiting  |  JWT Verify  |  Swagger  |  CBs  │
+                        └──────────────────┬───────────────────────────────────────────┘
+                                           │  HTTP proxy (axios + opossum circuit breakers)
+         ┌─────────────────────────────────┼────────────────────────────────────────────┐
+         │                                 │                                            │
+         ▼                                 ▼                                            ▼
+  ┌─────────────┐               ┌──────────────────┐                       ┌──────────────────┐
+  │ Auth Service│               │ Product Service   │                       │  Order Service   │
+  │  (Prisma)   │               │ (Prisma+Redis)    │                       │    (Prisma)      │
+  │  gRPC: 50053│               │  gRPC Server:50051│◄──── gRPC ────────── │  gRPC Server:50052│
+  └─────────────┘               └──────────────────┘                       └──────────────────┘
+                                         ▲                                           │
+                                         │              ┌────────────────────────────┘
+                                         │              │
+                                ┌─────────────────┐    │        ┌──────────────────┐
+                                │    RabbitMQ     │◄───┘        │  Payment Service │
+                                │ pharmaflow.     │             │   (Mongoose)     │
+                                │   events        │◄─payment.*──│  gRPC Client     │
+                                │  (topic exch.)  │             └──────────────────┘
+                                └─────────────────┘
+                                   │          │
+                      order.*      │          │  payment.*
+                      ┌────────────┘          └───────────────┐
+                      ▼                                       ▼
+             ┌────────────────┐                    ┌──────────────────┐
+             │ Product Service│                    │ Notification Svc │
+             │ stockConsumer  │                    │   (MongoDB)      │
+             └────────────────┘                    └──────────────────┘
+
+                        ── Centralized Logging Pipeline ──
+
+  Each service (Winston logger)
+         │
+         │  channel.publish  (pharmaflow.logs fanout exchange)
+         ▼
+  ┌─────────────────┐      consume      ┌──────────────────┐     HTTP push    ┌──────────────┐
+  │    RabbitMQ     │ ──────────────►  │  logging-service  │ ────────────►   │  Grafana Loki│
+  │ pharmaflow.logs │                   │   (batch=50,      │                  │  :3100       │
+  │  (fanout exch.) │                   │  flush=2000ms)    │                  └──────────────┘
+  └─────────────────┘                   └──────────────────┘                         │
+                                                                                     ▼
+                                                                             ┌──────────────┐
+                                                                             │   Grafana UI │
+                                                                             │   :3001      │
+                                                                             └──────────────┘
 ```
+
+---
+
+## Observability — Centralized Logging
+
+All services use a shared **Winston** logger (`src/utils/logger.js`) with two transports:
+
+| Transport | Purpose |
+|-----------|---------|
+| **Console** | Pretty-printed, colourised output during local development |
+| **RabbitMQ** | Publishes structured JSON to the `pharmaflow.logs` fanout exchange |
+
+The **logging-service** is a dedicated Node.js consumer that:
+1. Pulls messages from its own exclusive, PID-scoped queue (e.g. `logs-16640`).
+2. Buffers them in memory up to `BATCH_SIZE=50` or `FLUSH_INTERVAL_MS=2000ms`.
+3. Pushes the entire batch to Grafana Loki in a single HTTP call grouped by `{ service, level }` stream labels.
+
+**Key design decisions:**
+- **Fanout exchange** — every consumer (even multiple instances) gets its own copy of every log.
+- **Exclusive + PID-scoped queue** — each `logging-service` process owns a private queue that auto-deletes on disconnect, preventing Windows/nodemon zombie processes from stealing messages.
+- **Batch-ack** — a single RabbitMQ ack frame covers all messages in the flushed batch.
+- **nack + requeue on Loki failure** — if Loki is unreachable, logs are re-queued and retried.
+- **Non-blocking** — Winston transport callback is called immediately; publish is fire-and-forget.
+- **Circular-ref safe** — `JSON.stringify` is wrapped in `try/catch`; un-serializable payloads print a warning instead of crashing.
+
+**Logged events (selected):**
+
+| Service | Level | Event |
+|---------|-------|-------|
+| `payment-service` | `info` | Payment completed (success / overpaid / refunded) |
+| `payment-service` | `warn` | Circuit breaker open/fallback, budget deduction failed |
+| `order-service` | `info` | Order created, status changed |
+| `order-service` | `warn` | Circuit breaker events, stock reservation failure |
+| `auth-service` | `warn` | Failed login attempt, unauthorized access |
+
+---
+
+## Resilience — Circuit Breakers
+
+All inter-service HTTP calls in the **API Gateway** and the **Order/Payment services** are wrapped with **opossum** circuit breakers.
+
+### Configuration (`.env`)
+
+```env
+CB_TIMEOUT=3000        # ms before a call is considered failed
+CB_ERROR_THRESHOLD=50  # % error rate to trip the circuit
+CB_RESET_TIMEOUT=10000 # ms before the circuit probes again (HALF-OPEN)
+```
+
+### API Gateway behaviour
+
+| Scenario | Circuit State | Client receives |
+|----------|---------------|-----------------|
+| Downstream returns 4xx (e.g. 409 Conflict, 400 Bad Request) | **Stays CLOSED** — business errors do not count as failures | Original `4xx` status + body |
+| Downstream returns 5xx or is unreachable | **Counts toward threshold** | `503 Service Unavailable` once open |
+| Circuit is OPEN | **Fast-fail** — no call made | `503 { message: "<service> is currently unavailable" }` |
+
+**Key implementation detail:** The opossum `errorFilter` ignores `4xx` responses so that business logic errors (duplicate idempotency keys, order not in pending state, etc.) never trip the circuit. Only genuine infrastructure failures (5xx, `ECONNREFUSED`, timeouts) count.
+
+**Fallback safety:** Opossum fallback functions **always return** a plain sentinel object — they never `throw`. Throwing inside a fallback bypasses the `fire()` promise chain and causes an unhandled rejection crash. The calling layer reads the sentinel and throws a clean, non-circular error that the controller can safely serialize.
 
 ---
 
@@ -115,13 +209,14 @@ This is the recommended approach for local development to avoid geographical net
 
 The single entry point for all client traffic. No business logic lives here — it proxies requests to downstream services after authentication.
 
-**Port:** `process.env.PORT`  
+**Port:** `3000`  
 **Base path:** `/api/v1`
 
 #### Responsibilities
-- **JWT verification** — `verifyToken` middleware validates the Bearer token on all protected routes and injects a `x-current-user` header with the decoded payload before forwarding.
+- **JWT verification** — `verifyToken` middleware validates the Bearer token on all protected routes and injects an `x-current-user` header with the decoded payload before forwarding.
 - **Rate limiting** — 100 requests per 5-minute window per IP (`express-rate-limit`).
 - **Security headers** — `helmet` applied globally.
+- **Circuit breakers** — one `opossum` breaker per downstream service with shared config from `.env`.
 - **Swagger UI** — Full OpenAPI 3.0 docs served at `/api/v1/docs` (raw JSON at `/api/v1/docs.json`).
 
 #### Routes (proxied)
@@ -134,6 +229,7 @@ The single entry point for all client traffic. No business logic lives here — 
 | `*` | `/api/v1/categories` | `product-service` |
 | `*` | `/api/v1/orders/*` | `order-service` |
 | `*` | `/api/v1/notifications/*` | `notification-service` |
+| `*` | `/api/v1/payments/*` | `payment-service` |
 | `GET` | `/api/v1/health` | inline health check |
 
 ---
@@ -142,7 +238,7 @@ The single entry point for all client traffic. No business logic lives here — 
 
 Handles user identity — registration, login, and account management.
 
-**Port:** `process.env.PORT`  
+**Port:** `3010` (internal)  
 **Internal base path:** `/auth-service/api/v1`  
 **Database:** PostgreSQL via **Prisma**
 
@@ -150,6 +246,7 @@ Handles user identity — registration, login, and account management.
 - **Bloom filter** — seeded with all existing emails at startup to provide O(1) duplicate-email detection before hitting the database.
 - **Zod validation** — `validateRegister` / `validateLogin` middleware reject malformed payloads early.
 - **JWT issuance** — returns a signed token on successful login/register.
+- **Structured logging** — failed login attempts and unauthorised access logged as `warn` to Loki.
 
 #### Endpoints
 
@@ -167,25 +264,20 @@ Handles user identity — registration, login, and account management.
 
 Manages the pharmaceutical product catalogue and categories.
 
-**Port:** `process.env.PORT`  
+**Port:** `3002` (HTTP), `50051` (gRPC)  
 **Internal base path:** `/product-service/api/v1`  
 **Database:** PostgreSQL via **Prisma**  
 **Cache:** Redis (cache-aside pattern)
 
 #### Key Features
-- **Redis caching** — `cacheService` wraps product reads with a fire-and-forget invalidation strategy. Cache keys:
-  - `products:<id>` — individual product
-  - `products:all` — product listing
-  - `products:category:<id>` — products by category
+- **Redis caching** — `cacheService` wraps product reads with fire-and-forget invalidation.
 - **gRPC server** — exposes `ProductService` for internal stock reservation calls from the Order service.
 - **RabbitMQ consumer** — `startStockConsumer()` listens on two queues:
 
 | Queue | Routing Key(s) | Action |
 |-------|---------------|--------|
-| `stock.restore` | `order.cancelled`, `order.deleted` | Restores stock in bulk via single raw SQL `UPDATE` |
-| `stock.adjust` | `order.item.updated` | Adjusts stock deltas when order quantities decrease |
-
-- **Role-based access** — `validateRole` middleware enforces ADMIN-only write operations.
+| `stock.restore` | `order.cancelled`, `order.deleted` | Restores stock in bulk |
+| `stock.adjust` | `order.item.updated` | Adjusts stock deltas |
 
 #### Endpoints
 
@@ -194,13 +286,13 @@ Manages the pharmaceutical product catalogue and categories.
 | `POST` | `/categories` | ADMIN | Create category |
 | `PUT` | `/categories/:id` | ADMIN | Update category |
 | `DELETE` | `/categories/:id` | ADMIN | Delete category |
-| `GET` | `/categories` | ADMIN, CUSTOMER | List categories |
-| `GET` | `/categories/:id` | ADMIN, CUSTOMER | Get category |
+| `GET` | `/categories` | Auth | List categories |
+| `GET` | `/categories/:id` | Auth | Get category |
 | `POST` | `/products` | ADMIN | Create product |
 | `PUT` | `/products/:id` | ADMIN | Update product |
 | `DELETE` | `/products/:id` | ADMIN | Delete product |
-| `GET` | `/products` | ADMIN, CUSTOMER | List products |
-| `GET` | `/products/:id` | ADMIN, CUSTOMER | Get product |
+| `GET` | `/products` | Auth | List products |
+| `GET` | `/products/:id` | Auth | Get product |
 
 ---
 
@@ -208,42 +300,38 @@ Manages the pharmaceutical product catalogue and categories.
 
 Manages the full order lifecycle from placement through confirmation/cancellation.
 
-**Port:** `process.env.PORT`  
+**Port:** `3003` (HTTP), `50052` (gRPC)  
 **Internal base path:** `/order-service/api/v1`  
 **Database:** PostgreSQL via **Prisma**
 
 #### Key Features
-- **gRPC client** — calls `ProductService.CheckAndReserveStock` synchronously on order creation to atomically validate and reserve stock.
-- **gRPC server** — exposes `OrderService.GetOrderById` for the Payment service to verify order ownership before processing payments.
-- **RabbitMQ publisher** — publishes lifecycle events to the `pharmaflow.events` topic exchange:
+- **Circuit breakers** — `opossum` breakers wrap all gRPC calls to `product-service`. Circuit state changes are logged to Loki as structured `warn`/`info` events.
+- **gRPC client** — calls `ProductService.CheckAndReserveStock` synchronously on order creation.
+- **gRPC server** — exposes `OrderService.GetOrderById` for the Payment service.
+- **RabbitMQ publisher** — publishes lifecycle events to `pharmaflow.events`.
+- **RabbitMQ consumer** — listens on `orders.payments` queue for `payment.success` / `payment.failed`.
+- **Cursor-based pagination** — O(log n) order listings.
+- **Structured logging** — order creation, status changes, and circuit breaker events logged to Loki.
 
-| Event (routing key) | Trigger | Consumers |
-|--------------------|---------|-----------|
-| `order.placed` | Order created | `notification-service` |
-| `order.cancelled` | Order cancelled | `product-service` (stock restore), `notification-service` |
-| `order.deleted` | Order hard-deleted | `product-service` (stock restore) |
-| `order.item.updated` | Item quantity decreased | `product-service` (stock adjust) |
-| `order.updated` | Any status change | `notification-service` |
+#### Key RabbitMQ Events Published
 
-- **RabbitMQ consumer** — `startOrderConsumer()` listens on the `orders.payments` queue:
-
-| Routing Key | Action |
-|-------------|--------|
-| `payment.success` | Updates order status → `CONFIRMED` |
-| `payment.failed` | Logs warning; order remains `PENDING` (user can retry) |
-
-- **Cursor-based pagination** — order listings use efficient cursor pagination.
-- **Zod validation** — `validateCreateOrder` / `validateOrderQuery` reject malformed requests.
+| Routing Key | Trigger |
+|-------------|---------|
+| `order.placed` | Order created |
+| `order.cancelled` | Order cancelled |
+| `order.deleted` | Order hard-deleted |
+| `order.item.updated` | Item quantity decreased |
+| `order.updated` | Any status change |
 
 #### Endpoints
 
 | Method | Path | Access | Description |
 |--------|------|--------|-------------|
-| `POST` | `/orders` | ADMIN, CUSTOMER | Place a new order (reserves stock via gRPC) |
-| `PUT` | `/orders/:id` | ADMIN, CUSTOMER | Update order / items |
-| `DELETE` | `/orders/:id` | ADMIN, CUSTOMER | Cancel / delete order |
-| `GET` | `/orders/customer/:id` | ADMIN, CUSTOMER | List orders for a specific customer |
-| `GET` | `/orders/:id` | ADMIN, CUSTOMER | Get a single order |
+| `POST` | `/orders` | Auth | Place a new order |
+| `PUT` | `/orders/:id` | Auth | Update order / items |
+| `DELETE` | `/orders/:id` | Auth | Cancel / delete order |
+| `GET` | `/orders/customer/:id` | Auth | List orders for a customer |
+| `GET` | `/orders/:id` | Auth | Get a single order |
 | `GET` | `/orders` | ADMIN | List all orders |
 
 ---
@@ -252,34 +340,36 @@ Manages the full order lifecycle from placement through confirmation/cancellatio
 
 Processes payments against existing orders.
 
-**Port:** `process.env.PORT`  
+**Port:** `3005` (HTTP)  
 **Internal base path:** `/payment-service/api/v1`  
-**Database:** MongoDB via **Mongoose**
+**Database:** MySQL via **Prisma**
 
 #### Key Features
-- **gRPC client** — calls `OrderService.GetOrderById` before creating a payment to:
-  1. Verify the order exists.
-  2. Confirm the requesting user owns the order (`order.user_id === paymentData.userId`, using `keepCase: true` proto field names).
-  3. Confirm the order is in `PENDING` status.
-- **RabbitMQ publisher** — publishes payment outcome events:
+- **Circuit breakers** — `opossum` wraps gRPC calls to `order-service` and HTTP budget calls to `auth-service`. Circuit state changes are logged to Loki.
+- **gRPC client** — calls `OrderService.GetOrderById` to verify order existence, ownership, and `PENDING` status before creating a payment.
+- **Idempotency** — duplicate payment requests with the same key return the existing payment record.
+- **Overpayment handling** — if `amount > order.total`, a `payment.overpaid` event is published and the change is returned in the response.
+- **Refund sweep** — a cron job runs every 5 minutes to process pending refunds.
+- **RabbitMQ publisher** — publishes payment outcome events.
+- **Structured logging** — payment success, failure, and rollback events logged to Loki with full financial metadata.
 
-| Event (routing key) | Trigger | Consumers |
-|--------------------|---------|-----------|
-| `payment.success` | Payment record created | `order-service` (→ CONFIRMED), `notification-service` |
-| `payment.failed` | DB write error | `notification-service` |
-| `payment.refunded` | Refund processed | `notification-service` |
+#### Key RabbitMQ Events Published
 
-- **Design decision** — on payment failure, the order is **not cancelled**. The `payment.failed` event is published, the error is returned to the client, and the order stays `PENDING` so the user can retry with a different payment method.
-- **Zod validation** — `validatePaymentBody`, `validateOrderId`, `validatePaymentId`.
+| Routing Key | Trigger |
+|-------------|---------|
+| `payment.success` | Payment record created successfully |
+| `payment.failed` | DB write error |
+| `payment.overpaid` | Amount exceeds order total |
+| `payment.refunded` | Refund processed |
 
 #### Endpoints
 
 | Method | Path | Access | Description |
 |--------|------|--------|-------------|
-| `POST` | `/` | Authenticated | Create a payment for an order |
-| `GET` | `/me` | Authenticated | List my payments |
-| `GET` | `/order/:orderId` | Authenticated / ADMIN | Get payments for a specific order |
-| `GET` | `/:id` | Authenticated / ADMIN | Get a single payment |
+| `POST` | `/` | Auth | Create a payment for an order |
+| `GET` | `/me` | Auth | List my payments |
+| `GET` | `/order/:orderId` | Auth | Get payments for a specific order |
+| `GET` | `/:id` | Auth | Get a single payment |
 
 ---
 
@@ -287,31 +377,45 @@ Processes payments against existing orders.
 
 Persists in-app notifications triggered by order and payment lifecycle events.
 
-**Port:** `process.env.PORT`  
+**Port:** `3004`  
 **Internal base path:** `/notifications-service/api/v1`  
 **Database:** MongoDB via **Mongoose**
 
 #### Key Features
-- **RabbitMQ consumer** — `startNotificationConsumer()` uses a single durable queue (`notifications.orders`) bound to all relevant routing keys. Processed in a clean `TYPE_MAP` + `MESSAGE_BUILDERS` lookup pattern — adding a new event type requires only two lines.
-
-| Routing Key | Notification Type | Message |
-|-------------|------------------|---------|
-| `order.placed` | `ORDER_PLACED` | "Your order #X has been placed. Total: $Y." |
-| `order.cancelled` | `ORDER_CANCELLED` | "Your order #X has been cancelled." |
-| `order.updated` | `ORDER_UPDATED` | "Your order #X status is now Y. Total: $Z." |
-| `payment.success` | `PAYMENT_SUCCESS` | "Your payment of $X for order #Y was processed successfully." |
-| `payment.failed` | `PAYMENT_FAILED` | "Your payment of $X for order #Y failed. Please retry..." |
-
-- **Cursor-based pagination** — O(log n) cursor pagination for notification lists, replacing skip-based O(n) approaches.
-- **Zod validation** — `validateNotificationQuery` / `validateNotificationParams`.
+- **RabbitMQ consumer** — `startNotificationConsumer()` uses a single durable queue bound to all relevant routing keys. Processed in a clean `TYPE_MAP` + `MESSAGE_BUILDERS` lookup pattern.
+- **Cursor-based pagination** — O(log n) for notification lists.
 
 #### Endpoints
 
 | Method | Path | Access | Description |
 |--------|------|--------|-------------|
-| `GET` | `/notifications?cursor=&limit=` | Authenticated | Paginated notifications for logged-in user |
-| `GET` | `/notifications/:id` | Authenticated | Get a single notification |
-| `DELETE` | `/notifications/:id` | Authenticated | Delete a notification |
+| `GET` | `/notifications?cursor=&limit=` | Auth | Paginated notifications for logged-in user |
+| `GET` | `/notifications/:id` | Auth | Get a single notification |
+| `DELETE` | `/notifications/:id` | Auth | Delete a notification |
+
+---
+
+### 7. Logging Service
+
+Dedicated log consumer and Loki shipper — not exposed via the API Gateway.
+
+**Port:** `3005` (internal, not proxied)
+
+#### Responsibilities
+1. Consumes the `pharmaflow.logs` fanout exchange via an exclusive, PID-scoped queue (`logs-<pid>`).
+2. Buffers received log messages in memory.
+3. Flushes the batch to Grafana Loki via HTTP push when `BATCH_SIZE=50` is reached or `FLUSH_INTERVAL_MS=2000ms` elapses.
+4. On Loki failure: nacks all messages with `requeue=true` for automatic retry.
+5. On graceful shutdown (`SIGINT`/`SIGTERM`): flushes the buffer and closes connections cleanly.
+
+#### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `RABBITMQ_URL` | `amqp://localhost:5672` | RabbitMQ connection string |
+| `LOKI_URL` | `http://localhost:3100` | Grafana Loki push URL |
+| `BATCH_SIZE` | `50` | Max messages per Loki push |
+| `FLUSH_INTERVAL_MS` | `2000` | Max wait before flushing a partial batch |
 
 ---
 
@@ -319,37 +423,44 @@ Persists in-app notifications triggered by order and payment lifecycle events.
 
 ### RabbitMQ — Async Event Bus
 
-All services connect to a **single shared topic exchange**: `pharmaflow.events` (durable).
+Two exchanges are used:
+
+| Exchange | Type | Purpose |
+|----------|------|---------|
+| `pharmaflow.events` | topic | Business domain events (orders, payments, stock) |
+| `pharmaflow.logs` | fanout | Structured application logs → Grafana Loki |
 
 **Key design decisions:**
 - `persistent: true` on every published message — survives broker restart.
-- All queues declared `durable: true` — survive broker restart.
-- `prefetch(1)` on all consumers — prevents DB overload under high traffic.
-- `nack(msg, false, false)` on errors — no infinite requeue loops. Use a dead-letter queue (DLQ) in production.
-- Publishers are fire-and-forget — they do not block the HTTP response.
-- Each message payload includes a `timestamp` field stamped by the `publish()` helper.
+- All business queues declared `durable: true`.
+- Log queues declared `exclusive: true` — auto-delete on consumer disconnect.
+- `prefetch(1)` on business consumers — prevents DB overload under high traffic.
+- `prefetch(BATCH_SIZE)` on log consumer — fills a full batch before flushing.
+- `nack(msg, false, false)` on unrecoverable errors — no infinite requeue loops.
 
 ```
 Exchange: pharmaflow.events  (type: topic, durable: true)
 
-  order-service  ──publishes──►  order.placed
-                                 order.cancelled
-                                 order.deleted
-                                 order.item.updated
-                                 order.updated
+  order-service  ──publishes──►  order.placed / order.cancelled / order.deleted
+                                 order.item.updated / order.updated
 
-  payment-service ─publishes──►  payment.success
-                                  payment.failed
-                                  payment.refunded
+  payment-service ─publishes──►  payment.success / payment.failed
+                                  payment.overpaid / payment.refunded
 
-  product-service ─consumes──►  stock.restore  queue  ◄── order.cancelled, order.deleted
-                                 stock.adjust   queue  ◄── order.item.updated
+  product-service ─consumes──►  stock.restore  ◄── order.cancelled, order.deleted
+                                 stock.adjust   ◄── order.item.updated
 
-  order-service   ─consumes──►  orders.payments queue  ◄── payment.success, payment.failed
+  order-service   ─consumes──►  orders.payments ◄── payment.success, payment.failed
 
-  notification-service consumes► notifications.orders queue ◄── order.placed, order.cancelled,
-                                                                  order.updated, payment.success,
-                                                                  payment.failed
+  notification-service consumes► notifications.orders ◄── order.placed, order.cancelled,
+                                                            order.updated, payment.success,
+                                                            payment.failed
+
+Exchange: pharmaflow.logs  (type: fanout, durable: true)
+
+  All services (Winston logger)  ─publishes──►  structured JSON log entries
+
+  logging-service  ─consumes──►  logs-<pid>  ──batch push──►  Grafana Loki
 ```
 
 ### gRPC — Synchronous Internal Calls
@@ -361,9 +472,7 @@ Used when a service needs an **immediate, strongly-typed response** before it ca
 | `order-service` | `product-service` | `CheckAndReserveStock` | Validate & atomically reserve stock during order creation |
 | `payment-service` | `order-service` | `GetOrderById` | Verify order existence and ownership before accepting payment |
 
-**Shared proto files** live in `/proto/` at the monorepo root and are resolved by path in both client and server, ensuring a single source of truth.
-
-All gRPC connections use `keepCase: true` in `protoLoader` — proto field names are preserved as-is (`user_id`, `order_id`, etc.) in both client and server.
+All gRPC connections use `keepCase: true` in `protoLoader` — proto field names are preserved as-is (`user_id`, `order_id`, etc.).
 
 ---
 
@@ -387,58 +496,69 @@ pharma-flow-backend/
 │   ├── order.proto
 │   └── product.proto
 │
-├── api-gw/                       # API Gateway
-│   └── src/
-│       ├── config/swagger.js     # OpenAPI spec
-│       ├── controllers/          # Proxy controllers
-│       ├── middlewares/verifyToken.js
-│       └── routes/               # Swagger-annotated route files
+├── docker-compose.logging.yml    # Standalone Loki + Grafana stack
 │
-├── auth-service/                 # Authentication & user management
+├── api-gw/                       # API Gateway — entry point for all traffic
 │   └── src/
-│       ├── config/db.js          # Prisma client
-│       ├── model/                # Prisma user model wrapper
+│       ├── config/
+│       │   ├── swagger.js            # OpenAPI 3.0 spec (schemas + global security)
+│       │   └── circuitBreaker.config.js  # opossum options + errorFilter
+│       ├── controllers/apiGwControllers.js
+│       ├── services/apiGwService.js  # makeBreaker() factory + callBreaker() helper
+│       ├── middlewares/verifyToken.js
+│       ├── utils/logger.js           # Winston + RabbitMQ transport
+│       └── routes/                   # Swagger-annotated route files
+│
+├── auth-service/
+│   └── src/
 │       ├── service/
-│       │   ├── authService.js
+│       │   ├── authService.js        # login, register, Bloom filter seed
 │       │   └── bloomFilterService.js
 │       ├── middlewares/authValidn.js
+│       ├── utils/logger.js
 │       └── controller/authController.js
 │
-├── product-service/              # Product catalogue + stock management
+├── product-service/
 │   └── src/
-│       ├── config/               # Prisma, RabbitMQ, Redis
+│       ├── config/                   # Prisma, RabbitMQ, Redis
 │       ├── grpc/productGrpcServer.js
 │       ├── events/stockConsumer.js
 │       ├── service/
 │       │   ├── productsService.js
 │       │   ├── categoryService.js
 │       │   └── cacheService.js
-│       └── controller/
+│       └── utils/logger.js
 │
-├── order-service/                # Order lifecycle management
+├── order-service/
 │   └── src/
-│       ├── config/               # Prisma, RabbitMQ
+│       ├── config/                   # Prisma, RabbitMQ
 │       ├── grpc/
-│       │   ├── orderGrpcServer.js    # exposes GetOrderById
-│       │   └── productGrpcClient.js  # calls CheckAndReserveStock
+│       │   ├── orderGrpcServer.js        # exposes GetOrderById
+│       │   └── productGrpcClient.js      # calls CheckAndReserveStock
 │       ├── events/
 │       │   ├── orderPublisher.js
-│       │   └── orderConsumer.js      # listens for payment.success / payment.failed
-│       └── controller/
+│       │   └── orderConsumer.js
+│       ├── service/ordersService.js      # opossum breakers for gRPC calls
+│       └── utils/logger.js
 │
-├── payment-service/              # Payment processing
+├── payment-service/
 │   └── src/
 │       ├── config/rabbitmq.js
-│       ├── grpc/orderGrpcClient.js   # calls GetOrderById
+│       ├── grpc/orderGrpcClient.js
 │       ├── events/paymentPublisher.js
-│       ├── service/paymentService.js
-│       └── controller/paymentController.js
+│       ├── service/paymentService.js     # opossum breakers for gRPC + auth calls
+│       ├── controller/paymentController.js
+│       └── utils/logger.js
 │
-└── notification-service/         # In-app notification persistence
+├── notification-service/
+│   └── src/
+│       ├── config/
+│       ├── events/notificationConsumer.js
+│       ├── models/Notification.js
+│       ├── service/notificationService.js
+│       └── controller/notificationController.js
+│
+└── logging-service/              # Dedicated log consumer + Loki shipper
     └── src/
-        ├── config/               # MongoDB, RabbitMQ
-        ├── events/notificationConsumer.js
-        ├── models/Notification.js
-        ├── service/notificationService.js
-        └── controller/notificationController.js
+        └── index.js              # RabbitMQ consumer → batch buffer → Loki HTTP push
 ```

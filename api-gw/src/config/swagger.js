@@ -8,7 +8,8 @@ const options = {
             version: "1.0.0",
             description:
                 "API Gateway documentation for the PharmaFlow microservices platform. " +
-                "All protected endpoints require a Bearer JWT token obtained from `/api/v1/auth/login`.",
+                "All protected endpoints require a Bearer JWT token obtained from `/api/v1/auth/login`. " +
+                "The system is built with circuit breakers (opossum) for resilience against downstream failures and centralized structured logging (Winston + RabbitMQ + Loki) for full observability.",
         },
         servers: [
             { url: "http://localhost:3000/api/v1", description: "Local development" },
@@ -115,6 +116,27 @@ const options = {
                         message:   { type: "string", example: "Your order #xyz has been placed." },
                         payload:   { type: "object" },
                         createdAt: { type: "string", format: "date-time" },
+                    },
+                },
+
+                // ── Payment ───────────────────────────────────────────────────
+                PaymentRequest: {
+                    type: "object",
+                    required: ["orderId", "amount", "paymentMethod", "idempotencyKey", "currency"],
+                    properties: {
+                        orderId:        { type: "string", format: "uuid", example: "15ad97c5-ac6d-4303-8a5a-96a266450f6f" },
+                        amount:         { type: "number", example: 50.75 },
+                        paymentMethod:  { type: "string", enum: ["VISA", "MASTERCARD", "PAYPAL", "WALLET"], example: "VISA" },
+                        idempotencyKey: { type: "string", example: "pay-123-ts-1700000000" },
+                        currency:       { type: "string", example: "USD" },
+                    },
+                },
+                PaymentResponse: {
+                    type: "object",
+                    properties: {
+                        paymentId: { type: "string", format: "uuid" },
+                        status:    { type: "string", enum: ["SUCCESS", "FAILED", "REFUNDED"] },
+                        message:   { type: "string", example: "Payment processed successfully." },
                     },
                 },
 

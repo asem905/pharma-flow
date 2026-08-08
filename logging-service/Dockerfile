@@ -6,14 +6,9 @@ COPY package*.json ./
 
 RUN npm ci --omit=dev
 
-COPY prisma ./prisma/
-
-RUN npx prisma generate
-
 COPY . .
 
 USER node
 
-EXPOSE 3005
-
+# No HTTP server — this is a pure RabbitMQ consumer process
 CMD ["node", "src/index.js"]

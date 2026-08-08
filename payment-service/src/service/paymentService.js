@@ -6,6 +6,7 @@ import { publishPaymentSuccess, publishPaymentFailed, publishPaymentOverpaid } f
 import { performance } from "perf_hooks";
 import CircuitBreaker from "opossum";
 import { circuitBreakerOptions } from "../config/circuitBreaker.config.js";
+import logger from "../utils/logger.js";
 //====================why circuit breaker====================//
 //so now circuit breaker made what?: 
 // basically there are 3 states : CLOSED, OPEN, HALF OPEN
@@ -23,36 +24,48 @@ import { circuitBreakerOptions } from "../config/circuitBreaker.config.js";
 
 // Deduct budget breaker
 const deductBudgetBreaker = new CircuitBreaker(deductBudget, circuitBreakerOptions);
-deductBudgetBreaker.on("open", () => console.log("[CB] deductBudgetBreaker is OPEN"));
-deductBudgetBreaker.on("halfOpen", () => console.log("[CB] deductBudgetBreaker is HALF OPEN"));
-deductBudgetBreaker.on("close", () => console.log("[CB] deductBudgetBreaker is CLOSED"));
-deductBudgetBreaker.on("fallback", () => console.log("[CB] deductBudgetBreaker is FALLBACK"));
-deductBudgetBreaker.on("reject", () => console.log("[CB] deductBudgetBreaker is REJECTED"));
+deductBudgetBreaker.fallback(() => ({ success: false, __circuitOpen: true }));
+deductBudgetBreaker.on("open", () => logger.warn("Circuit OPEN — auth-service unreachable", { breaker: "deductBudget" }));
+deductBudgetBreaker.on("halfOpen", () => logger.info("Circuit HALF-OPEN — probing auth-service", { breaker: "deductBudget" }));
+deductBudgetBreaker.on("close", () => logger.info("Circuit CLOSED — auth-service recovered", { breaker: "deductBudget" }));
+deductBudgetBreaker.on("fallback", () => logger.warn("Circuit fallback triggered", { breaker: "deductBudget" }));
+deductBudgetBreaker.on("reject", () => logger.warn("Circuit rejected request", { breaker: "deductBudget" }));
 
 // Reverse budget breaker
 const reverseBudgetBreaker = new CircuitBreaker(reverseBudget, circuitBreakerOptions);
-reverseBudgetBreaker.on("open", () => console.log("[CB] reverseBudgetBreaker is OPEN"));
-reverseBudgetBreaker.on("halfOpen", () => console.log("[CB] reverseBudgetBreaker is HALF OPEN"));
-reverseBudgetBreaker.on("close", () => console.log("[CB] reverseBudgetBreaker is CLOSED"));
-reverseBudgetBreaker.on("fallback", () => console.log("[CB] reverseBudgetBreaker is FALLBACK"));
-reverseBudgetBreaker.on("reject", () => console.log("[CB] reverseBudgetBreaker is REJECTED"));
+reverseBudgetBreaker.fallback(() => ({ success: false, __circuitOpen: true }));
+reverseBudgetBreaker.on("open", () => logger.warn("Circuit OPEN — auth-service unreachable", { breaker: "reverseBudget" }));
+reverseBudgetBreaker.on("halfOpen", () => logger.info("Circuit HALF-OPEN — probing auth-service", { breaker: "reverseBudget" }));
+reverseBudgetBreaker.on("close", () => logger.info("Circuit CLOSED — auth-service recovered", { breaker: "reverseBudget" }));
+reverseBudgetBreaker.on("fallback", () => logger.warn("Circuit fallback triggered", { breaker: "reverseBudget" }));
+reverseBudgetBreaker.on("reject", () => logger.warn("Circuit rejected request", { breaker: "reverseBudget" }));
 
 // Order-by-ID breaker
 const getOrderByIdBreaker = new CircuitBreaker(getOrderById, circuitBreakerOptions);
-getOrderByIdBreaker.on("open", () => console.log("[CB] getOrderByIdBreaker is OPEN"));
-getOrderByIdBreaker.on("halfOpen", () => console.log("[CB] getOrderByIdBreaker is HALF OPEN"));
-getOrderByIdBreaker.on("close", () => console.log("[CB] getOrderByIdBreaker is CLOSED"));
-getOrderByIdBreaker.on("fallback", () => console.log("[CB] getOrderByIdBreaker is FALLBACK"));
-getOrderByIdBreaker.on("reject", () => console.log("[CB] getOrderByIdBreaker is REJECTED"));
+getOrderByIdBreaker.fallback(() => ({ __circuitOpen: true }));
+getOrderByIdBreaker.on("open", () => logger.warn("Circuit OPEN — order-service unreachable", { breaker: "getOrderById" }));
+getOrderByIdBreaker.on("halfOpen", () => logger.info("Circuit HALF-OPEN — probing order-service", { breaker: "getOrderById" }));
+getOrderByIdBreaker.on("close", () => logger.info("Circuit CLOSED — order-service recovered", { breaker: "getOrderById" }));
+getOrderByIdBreaker.on("fallback", () => logger.warn("Circuit fallback triggered", { breaker: "getOrderById" }));
+getOrderByIdBreaker.on("reject", () => logger.warn("Circuit rejected request", { breaker: "getOrderById" }));
 
 export class PaymentService {
     async createPayment(paymentData) {
-        console.log(`[PaymentFlow] Starting payment creation for order ${paymentData.orderId}`);
         const startTime = performance.now();
 
         let stepStart = performance.now();
-        const order = await getOrderByIdBreaker.fire({ order_id: paymentData.orderId });
+        let order;
+        try {
+            order = await getOrderByIdBreaker.fire({ order_id: paymentData.orderId });
+        } catch (err) {
+            logger.error("gRPC getOrderById failed", { orderId: paymentData.orderId, error: err.message });
+            return appError.createErrorResponse("Order service unavailable", 503, "failure");
+        }
         console.log(`[PaymentFlow] getOrderById took ${(performance.now() - stepStart).toFixed(2)}ms`);
+        if (order?.__circuitOpen) {
+            logger.warn("Payment blocked — order-service circuit is OPEN", { orderId: paymentData.orderId });
+            return appError.createErrorResponse("Order service unavailable", 503, "failure");
+        }
 
         if (!order) {
             return appError.createErrorResponse("Order not found", 404, "failure");
@@ -132,19 +145,37 @@ export class PaymentService {
 
             if (overpaymentChange > 0) {
                 publishPaymentOverpaid(results, email, overpaymentChange);
-                console.log(`[PaymentFlow] Finished payment creation in ${(performance.now() - startTime).toFixed(2)}ms (Overpaid)`);
+                logger.info("Payment completed — overpaid", {
+                    paymentId: results.id,
+                    orderId: paymentData.orderId,
+                    userId: paymentData.userId,
+                    paid: paidAmount,
+                    orderTotal,
+                    change: overpaymentChange,
+                    durationMs: (performance.now() - startTime).toFixed(2),
+                });
                 return { ...results, remainingAmount: overpaymentChange };
             }
 
-            console.log(`[PaymentFlow] Finished payment creation in ${(performance.now() - startTime).toFixed(2)}ms (Success)`);
-            //add the budget credits used:
+            logger.info("Payment completed — success", {
+                paymentId: results.id,
+                orderId: paymentData.orderId,
+                userId: paymentData.userId,
+                paid: paidAmount,
+                budgetCreditsUsed: isUnderpayment ? shortfall : 0,
+                durationMs: (performance.now() - startTime).toFixed(2),
+            });
             return {
                 ...results,
                 budgetCreditsUsed: isUnderpayment ? shortfall : 0,
             };
         } catch (error) {
-            console.error(`[PaymentFlow] Payment creation failed after ${(performance.now() - startTime).toFixed(2)}ms: ${error.message}`);
-            //  Synchronous RPC reversal instead of fire-and-forget event
+            logger.error("Payment creation failed", {
+                orderId: paymentData.orderId,
+                userId: paymentData.userId,
+                error: error.message,
+                durationMs: (performance.now() - startTime).toFixed(2),
+            });
             let refundConfirmed = false;
 
             if (budgetDeducted) {
@@ -158,8 +189,25 @@ export class PaymentService {
                     });
                     console.log(`[PaymentFlow] reverseBudget (rollback) took ${(performance.now() - stepStart).toFixed(2)}ms`);
                     refundConfirmed = refund.success;
+                    if (refundConfirmed) {
+                        logger.info("Budget rolled back after payment failure", {
+                            orderId: paymentData.orderId,
+                            userId: paymentData.userId,
+                            amount: shortfall,
+                        });
+                    } else {
+                        logger.warn("Budget rollback returned success=false after payment failure", {
+                            orderId: paymentData.orderId,
+                            userId: paymentData.userId,
+                            amount: shortfall,
+                        });
+                    }
                 } catch (refundErr) {
-                    console.error("[Payment] ReverseBudget RPC failed:", refundErr.message);
+                    logger.error("Budget rollback RPC failed after payment failure", {
+                        orderId: paymentData.orderId,
+                        userId: paymentData.userId,
+                        error: refundErr.message,
+                    });
                 }
             }
 

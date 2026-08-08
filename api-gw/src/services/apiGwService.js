@@ -16,32 +16,52 @@ const userHeader = (currentUser) => ({
 // ---------------------------------------------------------------------------
 function makeBreaker(name, fn) {
     const breaker = new CircuitBreaker(fn, circuitBreakerOptions);
-    breaker.fallback(() => ({ __circuitOpen: true, service: name }));
-    breaker.on("open",     () => console.log(`[CB] ${name} is OPEN — fast-failing all calls`));
+
+    // The fallback receives (...originalArgs, error).
+    // IMPORTANT: Never throw inside a fallback — opossum does not guarantee the throw
+    // routes back into fire()'s rejection, so it becomes an unhandled rejection that
+    // crashes Node.js.
+    // Instead, return a plain sentinel object. callBreaker reads it and throws from
+    // inside the async function it controls, which IS properly awaited.
+    breaker.fallback((_config, err) => {
+        if (err?.response) {
+            // HTTP error from downstream — carry status + body in sentinel
+            return {
+                __httpError: true,
+                status: err.response.status,
+                data: err.response.data,
+            };
+        }
+        // No response = network/timeout/circuit-open → generic 503
+        return { __circuitOpen: true, service: name };
+    });
+
+    breaker.on("open", () => console.log(`[CB] ${name} is OPEN — fast-failing all calls`));
     breaker.on("halfOpen", () => console.log(`[CB] ${name} is HALF OPEN — probing ${name}`));
-    breaker.on("close",    () => console.log(`[CB] ${name} is CLOSED — ${name} recovered`));
+    breaker.on("close", () => console.log(`[CB] ${name} is CLOSED — ${name} recovered`));
     breaker.on("fallback", () => console.warn(`[CB] ${name} FALLBACK triggered`));
-    breaker.on("reject",   () => console.warn(`[CB] ${name} REJECTED (circuit is open)`));
+    breaker.on("reject", () => console.warn(`[CB] ${name} REJECTED (circuit is open)`));
     return breaker;
 }
+
 
 // ---------------------------------------------------------------------------
 // Raw axios callers — these are what the circuit breakers wrap
 // ---------------------------------------------------------------------------
-const _authCall    = (config) => axios(config);
+const _authCall = (config) => axios(config);
 const _productCall = (config) => axios(config);
-const _orderCall   = (config) => axios(config);
-const _notifCall   = (config) => axios(config);
+const _orderCall = (config) => axios(config);
+const _notifCall = (config) => axios(config);
 const _paymentCall = (config) => axios(config);
 
 // ---------------------------------------------------------------------------
 // One breaker per downstream service
 // ---------------------------------------------------------------------------
-const authBreaker    = makeBreaker("auth-service",         _authCall);
-const productBreaker = makeBreaker("product-service",      _productCall);
-const orderBreaker   = makeBreaker("order-service",        _orderCall);
-const notifBreaker   = makeBreaker("notification-service", _notifCall);
-const paymentBreaker = makeBreaker("payment-service",      _paymentCall);
+const authBreaker = makeBreaker("auth-service", _authCall);
+const productBreaker = makeBreaker("product-service", _productCall);
+const orderBreaker = makeBreaker("order-service", _orderCall);
+const notifBreaker = makeBreaker("notification-service", _notifCall);
+const paymentBreaker = makeBreaker("payment-service", _paymentCall);
 
 // ---------------------------------------------------------------------------
 // Shared response handler
@@ -49,16 +69,28 @@ const paymentBreaker = makeBreaker("payment-service",      _paymentCall);
 // can forward the original status code from the downstream service.
 // ---------------------------------------------------------------------------
 async function callBreaker(breaker, config) {
-    const result = await breaker.fire(config);
+    try {
+        console.log(config)
+        const result = await breaker.fire(config);
 
-    // Fallback sentinel — circuit is OPEN, no HTTP call was made
-    if (result?.__circuitOpen) {
-        const err = new Error(`${result.service} is currently unavailable`);
-        err.statusCode = 503;
+        // HTTP error sentinel — fallback received a 4xx/5xx from downstream
+        if (result?.__httpError) {
+            const err = new Error(result.data?.message || 'Downstream service error');
+            err.response = { status: result.status, data: result.data };
+            throw err;
+        }
+
+        // Circuit-open / network failure sentinel
+        if (result?.__circuitOpen) {
+            const err = new Error(`${result.service} is currently unavailable`);
+            err.statusCode = 503;
+            throw err;
+        }
+
+        return result.data;
+    } catch (err) {
         throw err;
     }
-
-    return result.data; // axios wraps the body in .data
 }
 
 // ---------------------------------------------------------------------------
