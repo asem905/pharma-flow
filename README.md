@@ -484,6 +484,7 @@ Located at `/proto/` (monorepo root):
 proto/
 ├── order.proto    — OrderService.GetOrderById
 └── product.proto  — ProductService.CheckAndReserveStock, GetProductById, etc.
+└── auth.proto     — DeductBudget,ReverseBudget 
 ```
 
 ---
@@ -495,7 +496,7 @@ pharma-flow-backend/
 ├── proto/                        # Shared gRPC proto definitions
 │   ├── order.proto
 │   └── product.proto
-│
+│   └── auth.proto
 ├── docker-compose.logging.yml    # Standalone Loki + Grafana stack
 │
 ├── api-gw/                       # API Gateway — entry point for all traffic
