@@ -15,6 +15,9 @@ const adapter = new PrismaMariaDb({
     database: url.pathname.replace("/", ""),
     connectionLimit: 5,
     connectTimeout: 10000,
+    acquireTimeout: 10000,       // wait up to 10s to acquire a connection from the pool
+    idleTimeout: 30000,          // release connections idle > 30s before Railway kills them
+    keepAliveDelay: 10000,       // send keepalive every 10s to hold the TCP connection open
 });
 
 export const prisma = new PrismaClient({ adapter });

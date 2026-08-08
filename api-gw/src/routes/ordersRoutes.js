@@ -42,6 +42,25 @@ ordersRoutes.post("/", apiGwOrderController.createOrder);
  *   get:
  *     summary: List all orders (ADMIN only)
  *     tags: [Orders]
+ *     parameters:
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [PENDING, CONFIRMED, CANCELLED, PAYMENT_FAILURE]
+ *         description: Filter by order status
+ *       - in: query
+ *         name: fromDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter orders from this date (ISO 8601)
+ *       - in: query
+ *         name: toDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter orders up to this date (ISO 8601)
  *     responses:
  *       200:
  *         description: Array of all orders
@@ -67,7 +86,7 @@ ordersRoutes.get("/", apiGwOrderController.findAllOrders);
  *         name: status
  *         schema:
  *           type: string
- *           enum: [PENDING, CONFIRMED, CANCELLED]
+ *           enum: [PENDING, CONFIRMED, CANCELLED, PAYMENT_FAILURE]
  *         description: Filter by order status
  *       - in: query
  *         name: fromDate

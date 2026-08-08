@@ -16,4 +16,4 @@ USER node
 
 EXPOSE 3005
 
-CMD ["node", "src/server.js"]
+CMD ["node", "src/index.js"]

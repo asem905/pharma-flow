@@ -65,7 +65,8 @@ export const findOrder = asyncHandler(async (req, res, next) => {
 })
 
 export const findAllOrders = asyncHandler(async (req, res, next) => {
-    const result = await OrdersService.findAllOrders();
+    console.log("query params:", req.validatedQuery)
+    const result = await OrdersService.findAllOrders(req.validatedQuery);
     if (result.statusCode) {
         return res.status(result.statusCode).json({
             status: "fail",

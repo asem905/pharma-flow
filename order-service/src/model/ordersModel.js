@@ -38,30 +38,35 @@ class OrdersModel {
         });
     }
 
-    async findAllOrders() {
-        return await prisma.order.findMany({
-            include: {
-                orderItems: true
-            },
-            orderBy: {
-                createdAt: "desc"
-            },
-        });
-    }
+    // Converts the Zod-validated query object into a Prisma where clause.
+    // fromDate/toDate are remapped to a createdAt range filter.
+    // Every other validated field is spread directly — no manual wiring per param.
+    // This means adding a new field to the Zod schema automatically flows through
+    // without touching this model so open close principle is maintained.
+    #buildWhere(filters = {}, baseWhere = {}) {
+        const { fromDate, toDate, ...directFilters } = filters;
+        const where = { ...baseWhere, ...directFilters };
 
-    async findOrdersForCustomer(customerId, filters = {}) {
-        const { status, fromDate, toDate } = filters;
-        const where = { userId: customerId };
-
-        if (status) where.status = status;
         if (fromDate || toDate) {
             where.createdAt = {};
             if (fromDate) where.createdAt.gte = fromDate;
             if (toDate) where.createdAt.lte = toDate;
         }
 
+        return where;
+    }
+
+    async findAllOrders(filters = {}) {
         return await prisma.order.findMany({
-            where,
+            where: this.#buildWhere(filters),
+            include: { orderItems: true },
+            orderBy: { createdAt: "desc" },
+        });
+    }
+
+    async findOrdersForCustomer(customerId, filters = {}) {
+        return await prisma.order.findMany({
+            where: this.#buildWhere(filters, { userId: customerId }),
             include: { orderItems: true },
             orderBy: { createdAt: "desc" },
         });

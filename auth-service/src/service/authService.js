@@ -3,11 +3,13 @@ import bcrypt from "bcrypt"
 import appError from "../utils/appError.js"
 import genJWT from "../utils/genJWT.js"
 import bloomFilter from "./bloomFilterService.js"
+import logger from "../utils/logger.js"
+
 export class AuthService {
     static async login(email, password) {
         // Bloom filter fast-path: if email is definitely not registered, skip DB entirely
         if (!bloomFilter.mightExistEmail(email)) {
-            console.log("User not found from bloom filter")
+            logger.warn("Login rejected — email not in bloom filter", { email });
             return appError.createErrorResponse("User not found", 404, "fail")
         }
         const user = await userModel.findByEmail(email)
@@ -16,6 +18,7 @@ export class AuthService {
         }
         const isPasswordValid = await bcrypt.compare(password, user.password)
         if (!isPasswordValid) {
+            logger.warn("Failed login attempt — invalid credentials", { email });
             return appError.createErrorResponse("Invalid credentials", 401, "fail")
         }
 
@@ -47,6 +50,7 @@ export class AuthService {
 
         const token = await genJWT({ id: newUser.id, role: newUser.role, email: newUser.email })
         const { password: _, ...userWithoutPassword } = newUser
+        logger.info("New user registered", { userId: newUser.id, email, role });
         return { token, user: userWithoutPassword }
     }
     static async updateAccount(id, full_name, email, password, confirm_password, phone, address, role) {

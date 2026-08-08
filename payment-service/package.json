@@ -21,7 +21,10 @@
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "mariadb": "^3.5.3",
+    "node-cron": "^4.6.0",
+    "opossum": "^5.0.1",
     "prisma": "^7.9.1",
+    "winston": "^3.19.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
