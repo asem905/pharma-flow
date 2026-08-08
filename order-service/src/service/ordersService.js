@@ -1,6 +1,14 @@
 import ordersModel from "../model/ordersModel.js";
 import appError from "../utils/appError.js";
+
+// Circuit Breaker
+import CircuitBreaker from "opossum";
+import { circuitBreakerOptions } from "../config/circuitBreaker.config.js";
+
+// gRPC
 import { getProductsInfo, validateAndReserveStock, decrementStock } from "../grpc/productGrpcClient.js";
+
+// RabbitMQ Events
 import {
     publishOrderPlaced,
     publishOrderCancelled,
@@ -8,6 +16,34 @@ import {
     publishStockAdjust,
     publishOrderUpdated,
 } from "../events/orderPublisher.js";
+
+
+// ------------------------ Circuit Breaker for getProductsInfo ------------------------
+const getProductsInfoBreaker = new CircuitBreaker(getProductsInfo, circuitBreakerOptions);
+getProductsInfoBreaker.fallback(() => ({ __circuitOpen: true }));
+getProductsInfoBreaker.on("open",     () => console.log("[CB] getProductsInfoBreaker is OPEN — fast-failing all calls"));
+getProductsInfoBreaker.on("halfOpen", () => console.log("[CB] getProductsInfoBreaker is HALF OPEN — probing product service"));
+getProductsInfoBreaker.on("close",    () => console.log("[CB] getProductsInfoBreaker is CLOSED — product service recovered"));
+getProductsInfoBreaker.on("fallback", () => console.warn("[CB] getProductsInfoBreaker FALLBACK triggered (circuit is open or timed out)"));
+
+// ------------------------ Circuit Breaker for validateAndReserveStock ------------------------
+const validateAndReserveStockBreaker = new CircuitBreaker(
+    validateAndReserveStock,
+    circuitBreakerOptions
+);
+validateAndReserveStockBreaker.fallback(() => ({ __circuitOpen: true }));
+validateAndReserveStockBreaker.on("open",     () => console.log("[CB] validateAndReserveStockBreaker is OPEN — fast-failing all calls"));
+validateAndReserveStockBreaker.on("halfOpen", () => console.log("[CB] validateAndReserveStockBreaker is HALF OPEN — probing product service"));
+validateAndReserveStockBreaker.on("close",    () => console.log("[CB] validateAndReserveStockBreaker is CLOSED — product service recovered"));
+validateAndReserveStockBreaker.on("fallback", () => console.warn("[CB] validateAndReserveStockBreaker FALLBACK triggered (circuit is open or timed out)"));
+
+// ------------------------ Circuit Breaker for decrementStock ------------------------
+const decrementStockBreaker = new CircuitBreaker(decrementStock, circuitBreakerOptions);
+decrementStockBreaker.fallback(() => ({ __circuitOpen: true }));
+decrementStockBreaker.on("open",     () => console.log("[CB] decrementStockBreaker is OPEN — fast-failing all calls"));
+decrementStockBreaker.on("halfOpen", () => console.log("[CB] decrementStockBreaker is HALF OPEN — probing product service"));
+decrementStockBreaker.on("close",    () => console.log("[CB] decrementStockBreaker is CLOSED — product service recovered"));
+decrementStockBreaker.on("fallback", () => console.warn("[CB] decrementStockBreaker FALLBACK triggered (circuit is open or timed out)"));
 
 export class OrdersService {
 
@@ -32,12 +68,16 @@ export class OrdersService {
         let reserveResult;
         try {
             console.log(`[createOrder] gRPC validateAndReserveStock → ${reserveItems.length} item(s)`);
-            reserveResult = await validateAndReserveStock({ items: reserveItems });
-            console.log(`[createOrder] gRPC validateAndReserveStock ✔ success=${reserveResult.success}`);
+            reserveResult = await validateAndReserveStockBreaker.fire({ items: reserveItems });
         } catch (err) {
             console.error("[createOrder] gRPC validateAndReserveStock ✖ failed:", err.message);
             return appError.createErrorResponse("Product service unavailable", 503, "fail");
         }
+        if (reserveResult.__circuitOpen) {
+            console.warn("[createOrder] validateAndReserveStockBreaker is OPEN — returning 503 immediately (no gRPC call made)");
+            return appError.createErrorResponse("Product service unavailable", 503, "fail");
+        }
+        console.log(`[createOrder] gRPC validateAndReserveStock ✔ success=${reserveResult.success}`);
 
         if (!reserveResult.success) {
             console.warn(`[createOrder] Reserve rejected: product=${reserveResult.failed_product_id} | ${reserveResult.message}`);
@@ -126,7 +166,11 @@ export class OrdersService {
             let productsInfo;
             try {
                 console.log(`[updateOrder] gRPC getProductsInfo → ${newProductIds.length} product(s)`);
-                const response = await getProductsInfo({ product_ids: newProductIds });
+                const response = await getProductsInfoBreaker.fire({ product_ids: newProductIds });
+                if (response.__circuitOpen) {
+                    console.warn("[updateOrder] getProductsInfoBreaker is OPEN — returning 503 immediately (no gRPC call made)");
+                    return appError.createErrorResponse("Product service unavailable", 503, "fail");
+                }
                 productsInfo = response.products;
                 console.log(`[updateOrder] gRPC getProductsInfo ✔`);
             } catch (err) {
@@ -176,7 +220,7 @@ export class OrdersService {
                     }
                 }
                 console.log(`[updateOrder] gRPC decrementStock → ${toDecrement.length} product(s)`);
-                const decrementResult = await decrementStock({ updates: toDecrement });
+                const decrementResult = await decrementStockBreaker.fire({ updates: toDecrement });
                 console.log(`[updateOrder] gRPC decrementStock ✔ success=${decrementResult.success}`);
                 if (!decrementResult.success) {
                     console.warn(`[updateOrder] decrementStock rejected: product=${decrementResult.failed_product_id} | ${decrementResult.message}`);
