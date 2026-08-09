@@ -10,6 +10,12 @@ A production-ready **microservices backend** for a pharmaceutical e-commerce pla
   - [Option A: Local Development (Cloud Databases)](#option-a-local-development-cloud-databases)
   - [Option B: Logging Stack Only (Docker Compose)](#option-b-logging-stack-only-docker-compose)
 - [Architecture Overview](#architecture-overview)
+- [Design Decisions — Why Each Concept](#design-decisions--why-each-concept)
+  - [Redis Cache Invalidation](#redis-cache-invalidation)
+  - [Circuit Breakers](#circuit-breakers-opossum)
+  - [Centralized Logging Pipeline](#centralized-logging-pipeline)
+  - [Health Check Service](#health-check-service-why)
+  - [Payment Service — Clean Layered Logic](#payment-service--clean-layered-logic)
 - [Observability — Centralized Logging](#observability--centralized-logging)
 - [Resilience — Circuit Breakers](#resilience--circuit-breakers)
 - [Services](#services)
@@ -20,6 +26,7 @@ A production-ready **microservices backend** for a pharmaceutical e-commerce pla
   - [Payment Service](#5-payment-service)
   - [Notification Service](#6-notification-service)
   - [Logging Service](#7-logging-service)
+  - [Health Check Service](#8-health-check-service)
 - [Communication Patterns](#communication-patterns)
   - [RabbitMQ — Async Event Bus](#rabbitmq--async-event-bus)
   - [gRPC — Synchronous Internal Calls](#grpc--synchronous-internal-calls)
@@ -140,6 +147,88 @@ This will be the recommended approach for full local development to avoid geogra
                                                                              │   :3001      │
                                                                              └──────────────┘
 ```
+
+---
+
+## Design Decisions — Why Each Concept
+
+### Redis Cache Invalidation
+
+**Problem:** Product reads are frequent (every page load, search, order creation), but product writes are rare (admin only). Without caching, every read hits PostgreSQL, increasing latency and DB load unnecessarily.
+
+**Why cache-aside with fire-and-forget invalidation?**
+- On a `GET /products/:id`, the service checks Redis first. On a cache hit, the response is returned in sub-millisecond time — no DB round-trip.
+- On a cache miss, the DB is queried and the result is written back to Redis asynchronously (fire-and-forget), so the client doesn't wait for the cache write.
+- On any write (`POST`, `PUT`, `DELETE`), the cache key is **deleted** (invalidated) rather than updated. This avoids the "cache stampede" problem and keeps the logic simple: the next read will re-populate from DB.
+
+**Why delete instead of update?** Updating the cache during a write requires the write path and read path to agree on the exact serialization format. Deleting is simpler, safer, and guarantees the cache is never stale.
+
+---
+
+### Circuit Breakers (Opossum)
+
+**Problem:** In a microservice architecture, a slow or crashed downstream service (e.g. `auth-service`) will cause upstream callers to hang and accumulate blocked threads/connections. This cascading failure can take down the entire system.
+
+**Why circuit breakers?**
+- A circuit breaker wraps a network call and tracks its success/failure rate.
+- **CLOSED** → everything normal, requests pass through.
+- **OPEN** → after the error threshold is breached, the breaker stops making real calls and returns a fallback immediately (`503`). This gives the downstream service time to recover without being hammered.
+- **HALF-OPEN** → after a reset timeout, one probe request is allowed through. If it succeeds, the circuit closes; if not, it opens again.
+
+**Why `errorFilter` that ignores 4xx?**
+A `404 Order Not Found` or `409 Conflict` is a **business logic error**, not an infrastructure failure. Without `errorFilter`, these would count toward the failure threshold and trip the breaker incorrectly. Only `5xx`, timeouts, and `ECONNREFUSED` should count.
+
+**Why sentinel fallback objects instead of throwing?**
+Throwing inside an opossum fallback bypasses the `fire()` promise and causes an unhandled rejection crash. Returning a sentinel (`{ __circuitOpen: true }`) lets the calling service detect the open circuit gracefully and return a clean `503` to the client.
+
+---
+
+### Centralized Logging Pipeline
+
+**Problem:** When you have 7+ microservices all logging to their own stdout/files, debugging a cross-service request (e.g. an order that failed payment) means SSH-ing into multiple servers and grepping through scattered files. This is not scalable.
+
+**Why RabbitMQ → Loki pipeline?**
+- Every service uses a shared **Winston** logger with a custom RabbitMQ transport. Logs are published as structured JSON to a `pharmaflow.logs` **fanout exchange** — fire-and-forget, non-blocking.
+- The **logging-service** is the sole consumer. It batches messages and pushes them to **Grafana Loki** in a single HTTP call grouped by `{ service, level }` stream labels.
+- In **Grafana**, you can query across all services simultaneously: `{service=~"payment-service|order-service"} |= "orderId"` — instantly correlating events across service boundaries.
+
+**Why a fanout exchange for logs?**
+Fanout delivers a copy of every log to every bound queue. This means you can add a second logging consumer (e.g. an alerting service) without changing any producer code.
+
+**Why PID-scoped exclusive queues?**
+On Windows with nodemon, restarting a service leaves "zombie" processes that still own their queue. A new process trying to consume from the same named queue gets blocked. By naming queues `logs-<pid>` and marking them `exclusive: true` (auto-delete on disconnect), each process always gets a fresh, uncontested queue.
+
+---
+
+### Health Check Service — Why
+
+**Problem:** With 7 microservices running independently, it's impossible to know at a glance which services are up or down without manually hitting each endpoint. When a service goes down silently, the first sign is often a flood of user-facing errors.
+
+**Why a dedicated health-check service?**
+- It runs a sweep every **30 seconds** across all services concurrently (`Promise.allSettled`), so one DOWN service never blocks the others.
+- Results are logged as structured JSON via the same Winston → RabbitMQ → Loki pipeline. This means you can query Grafana for `{service="health-check-service"} |= "DOWN"` and see exactly when a service went offline and how long it was down.
+- Each service exposes a `GET /health` endpoint registered directly on the Express `app` (not inside the versioned router), so it bypasses JWT auth and works regardless of business-logic state.
+- `Promise.allSettled` is used instead of `Promise.all` so a single service timeout (5s) never cancels the entire sweep.
+
+---
+
+### Payment Service — Clean Layered Logic
+
+**Problem:** The original `createPayment` method was ~170 lines — it fetched and validated the order, calculated payment amounts, checked idempotency, deducted budget via gRPC, wrote to DB, published events, and handled rollbacks, all in one flat function. This is a classic "God function" — impossible to test in isolation, hard to reason about, and fragile to change.
+
+**Solution — private helper methods:**
+The `PaymentService` class now delegates each concern to a named private method:
+
+| Method | Responsibility |
+|--------|---------------|
+| `_fetchAndValidateOrder` | gRPC call + circuit breaker + ownership/status checks |
+| `_calculateAmounts` | Pure math — shortfall, overpayment, flags |
+| `_checkIdempotency` | Duplicate key detection + inline pending-refund reconciliation |
+| `_deductBudget` | gRPC call to auth-service with circuit breaker |
+| `_processPaymentSuccess` | DB write + event publishing |
+| `_handlePaymentFailure` | Budget rollback + failure audit record + failure event |
+
+The main `createPayment` now reads like a numbered checklist of the business flow. Each helper is independently understandable and can be unit-tested by passing mock data directly.
 
 ---
 
@@ -419,7 +508,55 @@ Dedicated log consumer and Loki shipper — not exposed via the API Gateway.
 
 ---
 
+### 8. Health Check Service
+
+A lightweight background process that continuously monitors the availability of all other services by polling their `/health` endpoints.
+
+**Port:** none (no HTTP server exposed — it is a client, not a server)  
+**Interval:** `30s` (configurable via `HEALTH_CHECK_INTERVAL_MS`)
+
+#### How It Works
+
+1. On startup, it immediately runs a full sweep across all 7 services.
+2. Every 30 seconds it repeats the sweep using `Promise.allSettled` — so a timeout from one service never blocks the rest.
+3. Each check hits `GET <service-url>/health` with a **5-second timeout**.
+4. Results are logged as structured JSON via Winston → RabbitMQ → Loki, so sweep history is queryable in Grafana.
+
+#### Log Outputs
+
+| Outcome | Log Level | Fields |
+|---------|-----------|--------|
+| HTTP 200 | `info` | `service`, `status: UP`, `latencyMs` |
+| Non-200 response | `info` | `service`, `status: DEGRADED`, `httpStatus`, `latencyMs` |
+| Timeout / unreachable | `warn` | `service`, `status: DOWN`, `reason`, `latencyMs` |
+| Sweep summary (all UP) | `info` | `up: 7` |
+| Sweep summary (any DOWN) | `warn` | `up`, `down`, `downServices: [...]` |
+
+#### Health Endpoints (All Services)
+
+Every service registers `GET /health` directly on its Express `app` — outside the versioned `/api/v1` router — so it requires no JWT token and responds regardless of business logic state.
+
+```json
+{ "status": "UP", "service": "payment-service", "uptime": 3612.4 }
+```
+
+#### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `HEALTH_CHECK_INTERVAL_MS` | `30000` | Milliseconds between sweeps |
+| `API_GW_URL` | `http://localhost:3000` | API Gateway URL |
+| `AUTH_SERVICE_URL` | `http://localhost:3010` | Auth Service URL |
+| `PRODUCT_SERVICE_URL` | `http://localhost:3002` | Product Service URL |
+| `ORDER_SERVICE_URL` | `http://localhost:3003` | Order Service URL |
+| `PAYMENT_SERVICE_URL` | `http://localhost:3005` | Payment Service URL |
+| `NOTIFICATION_SERVICE_URL` | `http://localhost:3004` | Notification Service URL |
+| `LOGGING_SERVICE_URL` | `http://localhost:3006` | Logging Service health port |
+
+---
+
 ## Communication Patterns
+
 
 ### RabbitMQ — Async Event Bus
 
@@ -547,7 +684,15 @@ pharma-flow-backend/
 │       ├── config/rabbitmq.js
 │       ├── grpc/orderGrpcClient.js
 │       ├── events/paymentPublisher.js
-│       ├── service/paymentService.js     # opossum breakers for gRPC + auth calls
+│       ├── model/paymentModel.js          # Prisma data access layer
+│       ├── jobs/refundSweep.js            # cron — retries PENDING refunds
+│       ├── service/paymentService.js      # orchestration via private helpers
+│       │   ├── _fetchAndValidateOrder()   # gRPC + circuit breaker
+│       │   ├── _calculateAmounts()        # pure math (shortfall, overpayment)
+│       │   ├── _checkIdempotency()        # duplicate key + pending refund reconcile
+│       │   ├── _deductBudget()            # auth-service gRPC + circuit breaker
+│       │   ├── _processPaymentSuccess()   # DB write + event publish
+│       │   └── _handlePaymentFailure()    # rollback + audit + failure event
 │       ├── controller/paymentController.js
 │       └── utils/logger.js
 │
@@ -560,6 +705,12 @@ pharma-flow-backend/
 │       └── controller/notificationController.js
 │
 └── logging-service/              # Dedicated log consumer + Loki shipper
+│   └── src/
+│       └── index.js              # RabbitMQ consumer → batch buffer → Loki HTTP push
+│                                 # + minimal Express /health server on :3006
+│
+└── healt-check-service/          # Polls all services every 30s
     └── src/
-        └── index.js              # RabbitMQ consumer → batch buffer → Loki HTTP push
+        ├── index.js              # setInterval sweep → Promise.allSettled → log results
+        └── utils/logger.js       # Winston + RabbitMQ transport (same pattern)
 ```
