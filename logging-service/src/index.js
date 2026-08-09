@@ -1,5 +1,6 @@
 import amqp from 'amqplib';
 import axios from 'axios';
+import express from 'express';
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -138,6 +139,16 @@ async function start() {
     process.on('SIGTERM', () => shutdown('SIGTERM'));
     process.on('SIGINT', () => shutdown('SIGINT'));
 }
+
+// Minimal health-check server — logging-service has no Express HTTP server otherwise
+const healthApp = express();
+healthApp.get('/health', (req, res) => {
+    res.status(200).json({ status: 'UP', service: 'logging-service', uptime: process.uptime() });
+});
+const HEALTH_PORT = process.env.HEALTH_PORT || 3006;
+healthApp.listen(HEALTH_PORT, () => {
+    console.log(`[logging-service] Health endpoint listening on :${HEALTH_PORT}/health`);
+});
 
 start().catch((err) => {
     console.error('[logging-service] Fatal startup error:', err.message);

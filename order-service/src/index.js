@@ -36,6 +36,10 @@ const startServer = async () => {
     await startOrderConsumer();   // listen for payment.success / payment.failed
     startGrpcServer();
 
+    app.get("/health", (req, res) => {
+        res.status(200).json({ status: "UP", service: "order-service", uptime: process.uptime() });
+    });
+
     app.listen(process.env.PORT, () => {
         console.log(`Order service running at : http://localhost:${process.env.PORT}/`);
     });

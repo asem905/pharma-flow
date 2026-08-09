@@ -3,10 +3,6 @@ import extractCurrentUser from "../middlewares/extractCurrentUser.js";
 import { validatePaymentBody, validateOrderId, validatePaymentId } from "../middlewares/paymentValidation.js";
 import { createPayment, getMyPayments, getPaymentsByOrder, getPaymentById } from "../controller/paymentController.js";
 const router = express.Router();
-// Health check — no auth needed
-router.get("/health", (req, res) => {
-    res.json({ status: "healthy", timestamp: new Date().toISOString() });
-});
 
 router.post(
     "/",

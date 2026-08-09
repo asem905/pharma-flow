@@ -19,10 +19,6 @@ import { validateRole } from "../middlewares/validateRole.js";
 
 const router = express.Router();
 
-router.get("/health", (req, res) => {
-    res.json({ status: "healthy", timestamp: new Date().toISOString() });
-});
-
 router.post("/categories", validateRole("ADMIN"), validateCategory, createCategory);
 router.delete("/categories/:id", validateRole("ADMIN"), deleteCategory);
 router.put("/categories/:id", validateRole("ADMIN"), validateCategory, updateCategory);

@@ -32,6 +32,10 @@ const startServer = async () => {
     // Start gRPC server
     startAuthGrpcServer();
 
+    app.get("/health", (req, res) => {
+        res.status(200).json({ status: "UP", service: "auth-service", uptime: process.uptime() });
+    });
+
     app.listen(process.env.PORT, () => {
         console.log(`Auth service running at : http://localhost:${process.env.PORT}/`);
     });
