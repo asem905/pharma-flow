@@ -7,10 +7,6 @@ import { paymentRoutes } from "./paymentRoutes.js";
 import verifyToken from "../middlewares/verifyToken.js";
 const router = express.Router();
 
-// Health check
-router.get("/health", (req, res) => {
-    res.json({ status: "healthy", timestamp: new Date().toISOString() });
-});
 
 // Public routes (no token needed)
 router.use("/auth", authRoutes);

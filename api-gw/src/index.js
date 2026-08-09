@@ -45,6 +45,10 @@ const apiLimiter = rateLimit({
 app.use("/", apiLimiter);
 app.use("/api/v1", router);
 
+app.get("/health", (req, res) => {
+    res.status(200).json({ status: "UP", service: "api-gateway", uptime: process.uptime() });
+});
+
 app.listen(process.env.PORT, () => {
     console.log(`API Gateway running at      : http://localhost:${process.env.PORT}/api/v1`);
     console.log(`Swagger UI available at     : http://localhost:${process.env.PORT}/api/v1/docs`);

@@ -19,6 +19,10 @@ const start = async () => {
     await connectRabbitMQ();
     await startNotificationConsumer();
 
+    app.get("/health", (req, res) => {
+        res.status(200).json({ status: "UP", service: "notification-service", uptime: process.uptime() });
+    });
+
     app.listen(PORT, () => {
         console.log(`[Server] Notification service running at http://localhost:${PORT}`);
     });

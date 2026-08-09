@@ -4,9 +4,6 @@ import { login, register, updateAccount, deleteAccount, getAllUsers } from "../c
 
 const router = express.Router();
 
-router.get("/health", (req, res) => {
-    res.json({ status: "healthy", timestamp: new Date().toISOString() });
-});
 
 router.post('/login', validateLogin, login);
 router.post('/register', validateRegister, register);

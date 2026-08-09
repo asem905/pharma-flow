@@ -20,6 +20,10 @@ const startServer = async () => {
     await connectRabbitMQ();   // must be ready before any payment publish calls
     startRefundSweep();        // background cron — catches any PENDING refunds the RPC missed
 
+    app.get("/health", (req, res) => {
+        res.status(200).json({ status: "UP", service: "payment-service", uptime: process.uptime() });
+    });
+
     app.listen(process.env.PORT, () => {
         console.log(`payment service running at : http://localhost:${process.env.PORT}/`);
     });

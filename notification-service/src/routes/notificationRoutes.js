@@ -9,11 +9,6 @@ import {
 
 const router = express.Router();
 
-// Health check — no auth needed
-router.get("/health", (req, res) => {
-    res.json({ status: "healthy", timestamp: new Date().toISOString() });
-});
-
 // All routes below require a valid user header from the API gateway
 router.use(extractCurrentUser);
 

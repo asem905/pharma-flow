@@ -25,6 +25,10 @@ const startServer = async () => {
     await startStockConsumer();
 
     // Start HTTP server
+    app.get("/health", (req, res) => {
+        res.status(200).json({ status: "UP", service: "product-service", uptime: process.uptime() });
+    });
+
     app.listen(process.env.PORT, () => {
         console.log(`Product service running at : http://localhost:${process.env.PORT}/`);
     });
