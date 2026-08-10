@@ -96,6 +96,8 @@ This is the recommended approach for full local development. It spins up local i
 4. The API Gateway will be available at `http://localhost:3000/api/v1`.
 5. Swagger UI is available at `http://localhost:3000/api/v1/docs`.
 
+![Docker Containers](assets/docker-containers.png)
+
 ---
 
 ## Architecture Overview
@@ -194,6 +196,8 @@ Throwing inside an opossum fallback bypasses the `fire()` promise and causes an 
 - The **logging-service** is the sole consumer. It batches messages and pushes them to **Grafana Loki** in a single HTTP call grouped by `{ service, level }` stream labels.
 - In **Grafana**, you can query across all services simultaneously: `{service=~"payment-service|order-service"} |= "orderId"` — instantly correlating events across service boundaries.
 
+![Grafana Payment Logs](assets/grafana-payment-logs.png)
+
 **Why a fanout exchange for logs?**
 Fanout delivers a copy of every log to every bound queue. This means you can add a second logging consumer (e.g. an alerting service) without changing any producer code.
 
@@ -211,6 +215,8 @@ On Windows with nodemon, restarting a service leaves "zombie" processes that sti
 - Results are logged as structured JSON via the same Winston → RabbitMQ → Loki pipeline. This means you can query Grafana for `{service="health-check-service"} |= "DOWN"` and see exactly when a service went offline and how long it was down.
 - Each service exposes a `GET /health` endpoint registered directly on the Express `app` (not inside the versioned router), so it bypasses JWT auth and works regardless of business-logic state.
 - `Promise.allSettled` is used instead of `Promise.all` so a single service timeout (5s) never cancels the entire sweep.
+
+![Grafana Health Check](assets/grafana-health-check.png)
 
 ---
 
@@ -309,6 +315,8 @@ The single entry point for all client traffic. No business logic lives here — 
 - **Security headers** — `helmet` applied globally.
 - **Circuit breakers** — one `opossum` breaker per downstream service with shared config from `.env`.
 - **Swagger UI** — Full OpenAPI 3.0 docs served at `/api/v1/docs` (raw JSON at `/api/v1/docs.json`).
+
+![Swagger UI](assets/swagger.png)
 
 #### Routes (proxied)
 
