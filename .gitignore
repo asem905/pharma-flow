@@ -14,9 +14,12 @@ node_modules/
 # Optional eslint cache
 .eslintcache
 
-# dotenv environment variables file
+# dotenv environment variables file — NEVER commit real credentials
 .env
 .env.test
+.env.local
+.env.*.local
+# .env.example is intentionally NOT ignored — it is the safe template
 
 # Build and Temp folders
 dist/
@@ -33,6 +36,6 @@ build/
 *.sln
 *.sw?
 
-# Temporary Docker configs (coming in future)
-docker-compose.yml
-infra/
+# Docker configs and infra are committed to Git (credentials are in .env)
+# docker-compose.yml — DO NOT ignore
+# infra/           — DO NOT ignore

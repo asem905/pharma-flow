@@ -82,17 +82,19 @@ After starting, **add Loki as a data source in Grafana:**
 
 Then use the **Explore** tab with a LogQL query like `{service="payment-service"}` to view structured logs.
 
-### Option C: Full Local Development (Docker Compose coming in future)
+### Option C: Full Local Development (Docker Compose — Recommended)
 
-This will be the recommended approach for full local development to avoid geographical network latency. It will spin up local instances of PostgreSQL, MySQL, MongoDB, Redis, and RabbitMQ, along with all the microservices, in a unified Docker network.
+This is the recommended approach for full local development. It spins up local instances of PostgreSQL, MySQL, MongoDB, Redis, RabbitMQ, Grafana, and Loki along with all the microservices in a unified Docker network.
 
-**Steps (Planned):**
-1. From the root of the project, run:
+**Steps:**
+1. Ensure Docker Desktop is running.
+2. From the root of the project, run:
    ```bash
    docker compose up -d --build
    ```
-2. Docker will automatically provision the databases and run Prisma migrations.
-3. The API Gateway will be available at `http://localhost:3000/api/v1`.
+3. Docker will automatically provision the databases, mount the `proto` directory for gRPC, and run `npx prisma db push` to initialize the database schemas before starting the Node.js services.
+4. The API Gateway will be available at `http://localhost:3000/api/v1`.
+5. Swagger UI is available at `http://localhost:3000/api/v1/docs`.
 
 ---
 
@@ -117,7 +119,7 @@ This will be the recommended approach for full local development to avoid geogra
                                          │              │
                                 ┌─────────────────┐    │        ┌──────────────────┐
                                 │    RabbitMQ     │◄───┘        │  Payment Service │
-                                │ pharmaflow.     │             │   (Mongoose)     │
+                                │ pharmaflow.     │             │   (Prisma/MySQL) │
                                 │   events        │◄─payment.*──│  gRPC Client     │
                                 │  (topic exch.)  │             └──────────────────┘
                                 └─────────────────┘

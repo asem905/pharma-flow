@@ -4,7 +4,7 @@ import { productsCategoriesRoutes } from "./productsCategoriesRoutes.js";
 import { ordersRoutes } from "./ordersRoutes.js";
 import { notificationsRoutes } from "./notificationsRoutes.js";
 import { paymentRoutes } from "./paymentRoutes.js";
-import verifyToken from "../middlewares/verifyToken.js";
+import verifyToken from "../middlewares/verifytoken.js";
 const router = express.Router();
 
 
