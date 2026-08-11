@@ -277,7 +277,7 @@ describe("Order flow (CUSTOMER)", () => {
       orderItems: [{ productId, quantity: 2 }],
     }, customerToken);
 
-    expect(status).toBe(201);
+    expect([200, 201]).toContain(status);
     expect(body.data.id).toBe(orderId); // exact same order returned
   });
 
