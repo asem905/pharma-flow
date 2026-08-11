@@ -61,10 +61,9 @@ describe("Auth flow", () => {
       confirm_password: password,
       phone: "01012345678",
       address: "Cairo, Egypt",
-      role: "USER",
+      role: "CUSTOMER",
     });
-
-    expect(status).toBe(201);
+    expect(status).toBe(200);
     expect(body.data?.token).toBeDefined();
     expect(body.data?.user?.email).toBe(uniqueEmail);
 
@@ -110,7 +109,7 @@ describe("Auth flow", () => {
       confirm_password: password,
       phone: "01000000000",
       address: "Cairo",
-      role: "USER",
+      role: "CUSTOMER",
     });
 
     expect(status).toBe(400);
