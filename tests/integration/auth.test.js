@@ -54,7 +54,7 @@ describe("Auth flow", () => {
   const password = "TestPass123!";
 
   it("registers a new user → 201", async () => {
-    const { status, body } = await api("POST", "/auth-service/api/v1/auth/register", {
+    const { status, body } = await api("POST", "/api/v1/auth/register", {
       full_name: "Integration Tester",
       email: uniqueEmail,
       password,
@@ -73,7 +73,7 @@ describe("Auth flow", () => {
   });
 
   it("login with correct credentials → 200", async () => {
-    const { status, body } = await api("POST", "/auth-service/api/v1/auth/login", {
+    const { status, body } = await api("POST", "/api/v1/auth/login", {
       email: uniqueEmail,
       password,
     });
@@ -85,7 +85,7 @@ describe("Auth flow", () => {
   });
 
   it("login with wrong password → 401", async () => {
-    const { status } = await api("POST", "/auth-service/api/v1/auth/login", {
+    const { status } = await api("POST", "/api/v1/auth/login", {
       email: uniqueEmail,
       password: "wrong-password",
     });
@@ -94,7 +94,7 @@ describe("Auth flow", () => {
   });
 
   it("login with non-existent email → 404", async () => {
-    const { status } = await api("POST", "/auth-service/api/v1/auth/login", {
+    const { status } = await api("POST", "/api/v1/auth/login", {
       email: "ghost@nowhere.com",
       password: "doesnt-matter",
     });
@@ -103,7 +103,7 @@ describe("Auth flow", () => {
   });
 
   it("duplicate registration → 400", async () => {
-    const { status } = await api("POST", "/auth-service/api/v1/auth/register", {
+    const { status } = await api("POST", "/api/v1/auth/register", {
       full_name: "Duplicate",
       email: uniqueEmail,
       password,
@@ -120,12 +120,12 @@ describe("Auth flow", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 describe("Protected routes require JWT", () => {
   it("GET /products without token → 401", async () => {
-    const { status } = await api("GET", "/product-service/api/v1/products");
+    const { status } = await api("GET", "/api/v1/products");
     expect(status).toBe(401);
   });
 
   it("GET /orders without token → 401", async () => {
-    const { status } = await api("GET", "/order-service/api/v1/orders");
+    const { status } = await api("GET", "/api/v1/orders");
     expect(status).toBe(401);
   });
 });
