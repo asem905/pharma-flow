@@ -54,38 +54,37 @@ describe("Auth flow", () => {
   const password = "TestPass123!";
 
   it("registers a new user → 201", async () => {
-    const { status, body } = await api("POST", "/auth-service/api/v1/auth/register", {
+    const { status, body } = await api("POST", "/api/v1/auth/register", {
       full_name: "Integration Tester",
       email: uniqueEmail,
       password,
       confirm_password: password,
       phone: "01012345678",
       address: "Cairo, Egypt",
-      role: "USER",
+      role: "CUSTOMER",
     });
+    expect(status).toBe(200);
+    expect(body.token).toBeDefined();
+    expect(body.user?.email).toBe(uniqueEmail);
 
-    expect(status).toBe(201);
-    expect(body.data?.token).toBeDefined();
-    expect(body.data?.user?.email).toBe(uniqueEmail);
-
-    userToken = body.data.token;
-    userId = body.data.user.id;
+    userToken = body.token;
+    userId = body.user.id;
   });
 
   it("login with correct credentials → 200", async () => {
-    const { status, body } = await api("POST", "/auth-service/api/v1/auth/login", {
+    const { status, body } = await api("POST", "/api/v1/auth/login", {
       email: uniqueEmail,
       password,
     });
 
     expect(status).toBe(200);
-    expect(body.data?.token).toBeDefined();
+    expect(body.token).toBeDefined();
     // Token from login should also be usable
-    userToken = body.data.token;
+    userToken = body.token;
   });
 
   it("login with wrong password → 401", async () => {
-    const { status } = await api("POST", "/auth-service/api/v1/auth/login", {
+    const { status } = await api("POST", "/api/v1/auth/login", {
       email: uniqueEmail,
       password: "wrong-password",
     });
@@ -94,7 +93,7 @@ describe("Auth flow", () => {
   });
 
   it("login with non-existent email → 404", async () => {
-    const { status } = await api("POST", "/auth-service/api/v1/auth/login", {
+    const { status } = await api("POST", "/api/v1/auth/login", {
       email: "ghost@nowhere.com",
       password: "doesnt-matter",
     });
@@ -103,14 +102,14 @@ describe("Auth flow", () => {
   });
 
   it("duplicate registration → 400", async () => {
-    const { status } = await api("POST", "/auth-service/api/v1/auth/register", {
+    const { status } = await api("POST", "/api/v1/auth/register", {
       full_name: "Duplicate",
       email: uniqueEmail,
       password,
       confirm_password: password,
       phone: "01000000000",
       address: "Cairo",
-      role: "USER",
+      role: "CUSTOMER",
     });
 
     expect(status).toBe(400);
@@ -120,12 +119,12 @@ describe("Auth flow", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 describe("Protected routes require JWT", () => {
   it("GET /products without token → 401", async () => {
-    const { status } = await api("GET", "/product-service/api/v1/products");
+    const { status } = await api("GET", "/api/v1/products");
     expect(status).toBe(401);
   });
 
   it("GET /orders without token → 401", async () => {
-    const { status } = await api("GET", "/order-service/api/v1/orders");
+    const { status } = await api("GET", "/api/v1/orders");
     expect(status).toBe(401);
   });
 });
