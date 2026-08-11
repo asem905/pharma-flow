@@ -64,11 +64,11 @@ describe("Auth flow", () => {
       role: "CUSTOMER",
     });
     expect(status).toBe(200);
-    expect(body.data?.token).toBeDefined();
-    expect(body.data?.user?.email).toBe(uniqueEmail);
+    expect(body.token).toBeDefined();
+    expect(body.user?.email).toBe(uniqueEmail);
 
-    userToken = body.data.token;
-    userId = body.data.user.id;
+    userToken = body.token;
+    userId = body.user.id;
   });
 
   it("login with correct credentials → 200", async () => {
@@ -78,9 +78,9 @@ describe("Auth flow", () => {
     });
 
     expect(status).toBe(200);
-    expect(body.data?.token).toBeDefined();
+    expect(body.token).toBeDefined();
     // Token from login should also be usable
-    userToken = body.data.token;
+    userToken = body.token;
   });
 
   it("login with wrong password → 401", async () => {
