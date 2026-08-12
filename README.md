@@ -10,6 +10,10 @@ A production-ready **microservices backend** for a pharmaceutical e-commerce pla
   - [Option A: Local Development (Cloud Databases)](#option-a-local-development-cloud-databases)
   - [Option B: Logging Stack Only (Docker Compose)](#option-b-logging-stack-only-docker-compose)
 - [Architecture Overview](#architecture-overview)
+- [Testing & CI/CD](#testing--cicd)
+  - [Unit Tests](#unit-tests)
+  - [Integration Tests](#integration-tests)
+  - [GitHub Actions Pipeline](#github-actions-pipeline)
 - [Design Decisions — Why Each Concept](#design-decisions--why-each-concept)
   - [Redis Cache Invalidation](#redis-cache-invalidation)
   - [Circuit Breakers](#circuit-breakers-opossum)
@@ -154,7 +158,104 @@ This is the recommended approach for full local development. It spins up local i
 
 ---
 
-## Design Decisions — Why Each Concept
+## Testing & CI/CD
+
+The project ships with a fully automated, two-stage testing pipeline that runs on every push to any branch via **GitHub Actions**.
+
+### Unit Tests
+
+Each microservice has its own isolated unit test suite using **[Vitest](https://vitest.dev/)** — chosen over Jest for its native, configuration-free ESM support (`"type": "module"`).
+
+**Framework:** Vitest v3 with `@vitest/coverage-v8`  
+**Mocking strategy:** `vi.mock()` is used to mock all external dependencies at the module level (Prisma models, gRPC clients, RabbitMQ publishers, Redis) so tests run instantly with zero infrastructure.
+
+| Service | Tests | What's covered |
+|---|---|---|
+| `auth-service` | 13 | Login bloom-filter fast-path, register validation, updateAccount, deleteAccount, getAllUsers |
+| `payment-service` | 15 | `_calculateAmounts` pure math (exact/under/over-payment, float precision), `createPayment` guard paths, idempotency replay, budget deduction, `getMyPayments` |
+| `product-service` | 16 | Cache HIT/MISS/invalidation on all CRUD operations for both Products and Categories |
+| `order-service` | 12 | Idempotency replay, circuit-breaker 503 fallback, stock reservation 409, success creation with event publishing, delete stock-restore logic, cancellation events |
+| `notification-service` | 9 | Cursor-based pagination (sentinel doc detection, limit capping, cursor `$lt` filter), getById, deleteById |
+| `api-gw` | 10 | HTTP method/URL/header/body forwarding, `x-current-user` header injection, downstream HTTP error propagation across all 5 downstream services |
+| **Total** | **75** | **100% passing** |
+
+**Running locally:**
+```bash
+# From any service directory:
+npm test
+
+# With coverage report:
+npm run test:coverage
+```
+
+**Path alias:** Each `vitest.config.js` maps `@/` → `src/` so test imports never break due to directory nesting.
+```js
+// Instead of fragile: ../../src/service/authService.js
+import { AuthService } from "@/service/authService.js";
+```
+
+---
+
+### Integration Tests
+
+Located in `tests/integration/`, these tests run against the **full live Docker Compose stack** and fire real HTTP requests at the API Gateway. No mocks — every call traverses the complete request path: `Client → API Gateway → Service → Database`.
+
+**Test file:** `tests/integration/auth.test.js`
+
+| Suite | Tests | What's verified |
+|---|---|---|
+| Health checks | 1 | API Gateway is reachable |
+| Auth flow | 6 | Register ADMIN + CUSTOMER, login, wrong password → 401, ghost email → 404, duplicate → 400 |
+| Protected routes | 2 | Unauthenticated GET /products and GET /orders → 401 |
+| Category flow | 4 | CUSTOMER blocked (403), ADMIN creates, duplicate name → 400, list all |
+| Product flow | 6 | CUSTOMER blocked (403), ADMIN creates (with real categoryId UUID), GET all/by-id, 404 on ghost UUID, ADMIN updates |
+| Order flow | 7 | Create order (real productId via gRPC stock reserve), idempotency replay, list customer orders, 403 on other user's orders, GET by id, 404 ghost, cancel → CANCELLED, delete |
+| Notifications | 2 | GET my notifications → 200, invalid ObjectId → 400/404 |
+| Payments | 2 | GET my payments, GET payments by order |
+| **Total** | **31** | **100% passing** |
+
+Test state flows sequentially — the `categoryId` created in the category test is used to create a product, which is then used to create an order, ensuring every step is validated against real data.
+
+---
+
+### GitHub Actions Pipeline
+
+Defined in `.github/workflows/ci.yml`. Triggers automatically on every push to any branch.
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│  Stage 1 — Unit Tests  (parallel, all services at once)                 │
+│                                                                         │
+│  auth-service  payment-service  product-service  order-service          │
+│  notification-service  api-gw                                           │
+│                                                                         │
+│  → npm ci → npm test (vitest run)                                       │
+└─────────────────────────────────────────────────────────────────────────┘
+                              │
+              Only if ALL unit jobs pass
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  Stage 2 — Integration Tests  (gated)                                   │
+│                                                                         │
+│  1. Write .env from ENV_FILE GitHub secret                              │
+│  2. docker compose up -d --build --wait  (waits for health checks)      │
+│  3. npm ci && npm test  (fires HTTP at live API Gateway)                │
+│  4. On failure: dump docker logs → upload as CI artifact                │
+│  5. Always: docker compose down -v                                      │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**Key design decisions:**
+- `fail-fast: false` on the unit test matrix — all 6 services are reported even if one fails, so you see the full picture.
+- `needs: unit-tests` on the integration job — integration tests never run if any unit test is broken.
+- `docker compose up --wait` — waits for every service's health check to pass before firing requests.
+- Docker logs are uploaded as a CI artifact on failure for post-mortem debugging.
+- The `ENV_FILE` secret holds the entire `.env` file content — set it in **GitHub → Settings → Secrets → Actions**.
+
+---
+
+ — Why Each Concept
 
 ### Redis Cache Invalidation
 
@@ -639,6 +740,16 @@ proto/
 
 ```
 pharma-flow-backend/
+├── .github/
+│   └── workflows/
+│       └── ci.yml                # Two-stage CI: parallel unit tests → gated integration tests
+│
+├── tests/                        # Integration test suite (runs against live Docker stack)
+│   └── integration/
+│       ├── auth.test.js          # 31 E2E tests: auth, products, categories, orders, payments, notifications
+│       ├── vitest.config.js
+│       └── package.json
+│
 ├── proto/                        # Shared gRPC proto definitions
 │   ├── order.proto
 │   └── product.proto
@@ -646,6 +757,9 @@ pharma-flow-backend/
 ├── docker-compose.logging.yml    # Standalone Loki + Grafana stack
 │
 ├── api-gw/                       # API Gateway — entry point for all traffic
+│   ├── tests/unit/
+│   │   └── apiGwService.test.js  # 10 unit tests: HTTP forwarding, headers, error propagation
+│   ├── vitest.config.js
 │   └── src/
 │       ├── config/
 │       │   ├── swagger.js            # OpenAPI 3.0 spec (schemas + global security)
@@ -657,6 +771,9 @@ pharma-flow-backend/
 │       └── routes/                   # Swagger-annotated route files
 │
 ├── auth-service/
+│   ├── tests/unit/
+│   │   └── authService.test.js   # 13 unit tests: login, register, bloom filter, account management
+│   ├── vitest.config.js
 │   └── src/
 │       ├── service/
 │       │   ├── authService.js        # login, register, Bloom filter seed
@@ -666,6 +783,9 @@ pharma-flow-backend/
 │       └── controller/authController.js
 │
 ├── product-service/
+│   ├── tests/unit/
+│   │   └── productsService.test.js  # 16 unit tests: Redis cache HIT/MISS, CRUD, category service
+│   ├── vitest.config.js
 │   └── src/
 │       ├── config/                   # Prisma, RabbitMQ, Redis
 │       ├── grpc/productGrpcServer.js
@@ -677,6 +797,9 @@ pharma-flow-backend/
 │       └── utils/logger.js
 │
 ├── order-service/
+│   ├── tests/unit/
+│   │   └── ordersService.test.js    # 12 unit tests: idempotency, circuit-breaker, stock errors, events
+│   ├── vitest.config.js
 │   └── src/
 │       ├── config/                   # Prisma, RabbitMQ
 │       ├── grpc/
@@ -689,6 +812,9 @@ pharma-flow-backend/
 │       └── utils/logger.js
 │
 ├── payment-service/
+│   ├── tests/unit/
+│   │   └── paymentService.test.js   # 15 unit tests: payment math, guard paths, idempotency, budget deduction
+│   ├── vitest.config.js
 │   └── src/
 │       ├── config/rabbitmq.js
 │       ├── grpc/orderGrpcClient.js
@@ -706,6 +832,9 @@ pharma-flow-backend/
 │       └── utils/logger.js
 │
 ├── notification-service/
+│   ├── tests/unit/
+│   │   └── notificationService.test.js  # 9 unit tests: cursor pagination, getById, deleteById
+│   ├── vitest.config.js
 │   └── src/
 │       ├── config/
 │       ├── events/notificationConsumer.js
