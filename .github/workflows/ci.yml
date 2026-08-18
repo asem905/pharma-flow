@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Stage 1 — Unit Tests (one job per service, all run in parallel)
+  # No infrastructure needed — all external deps are mocked with Vitest.
+  # ─────────────────────────────────────────────────────────────────────────────
+  unit-tests:
+    name: "Unit — ${{ matrix.service }}"
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false   # show ALL broken services, not just the first one
+      matrix:
+        service:
+          - auth-service
+          - payment-service
+          - product-service
+          - order-service
+          - notification-service
+          - api-gw
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node ${{ matrix.service == 'auth-service' && '25' || '25' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: 25
+          cache: npm
+          cache-dependency-path: ${{ matrix.service }}/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ${{ matrix.service }}
+        run: npm ci
+
+      - name: Run unit tests
+        working-directory: ${{ matrix.service }}
+        run: npm test
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Stage 2 — Integration Tests
+  # Boots the full Docker Compose stack and fires real HTTP at the API Gateway.
+  # Only runs when every unit job in the matrix passes.
+  # ─────────────────────────────────────────────────────────────────────────────
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: unit-tests   # ← gated: all unit jobs must be green first
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Write .env from secret
+        run: echo "${{ secrets.ENV_FILE }}" > .env
+
+      - name: Start full stack (with health-check wait)
+        run: docker compose up -d --build --wait
+        timeout-minutes: 10
+
+      - name: Set up Node 25
+        uses: actions/setup-node@v4
+        with:
+          node-version: 25
+          cache: npm
+          cache-dependency-path: tests/integration/package-lock.json
+
+      - name: Install integration test dependencies
+        working-directory: tests/integration
+        run: npm ci
+
+      - name: Run integration tests
+        working-directory: tests/integration
+        run: npm test
+        env:
+          API_GW_URL: http://localhost:3000
+
+      # ── Failure diagnostics ─────────────────────────────────────────────────
+      - name: Dump Docker logs on failure
+        if: failure()
+        run: docker compose logs --no-color > docker-logs.txt
+
+      - name: Upload Docker logs as artifact
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: docker-logs
+          path: docker-logs.txt
+          retention-days: 7
+
+      # ── Always clean up ─────────────────────────────────────────────────────
+      - name: Tear down stack
+        if: always()
+        run: docker compose down -v

@@ -1,0 +1,12 @@
+{
+  "name": "integration-tests",
+  "version": "1.0.0",
+  "description": "End-to-end integration tests for PharmaFlow API Gateway",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --reporter=verbose"
+  },
+  "devDependencies": {
+    "vitest": "^3.0.0"
+  }
+}

@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE `users` ADD COLUMN `budget` DOUBLE NULL DEFAULT 0;

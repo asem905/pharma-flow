@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package auth;
+
+service AuthService {
+    rpc GetUserById (GetUserByIdRequest) returns (GetUserByIdResponse);
+    rpc DeductBudget (DeductBudgetRequest) returns (DeductBudgetResponse);
+    rpc ReverseBudget (ReverseBudgetRequest) returns (ReverseBudgetResponse);
+}
+
+message GetUserByIdRequest {
+    string user_id = 1;
+}
+
+message GetUserByIdResponse {
+    string id = 1;
+    string email = 2;
+    string role = 3;
+    float budget = 4;
+}
+
+message DeductBudgetRequest {
+    string user_id = 1;
+    float amount = 2;
+}
+
+message DeductBudgetResponse {
+    bool success = 1;
+    string message = 2;
+    float remaining_budget = 3;
+}
+
+message ReverseBudgetRequest {
+    string user_id = 1;
+    float amount = 2;
+    string refund_key = 3;
+}
+
+message ReverseBudgetResponse {
+    bool success = 1;
+    string message = 2;
+    float remaining_budget = 3;
+}

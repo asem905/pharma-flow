@@ -1,0 +1,42 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+enum user_roles {
+    CUSTOMER
+    ADMIN
+}
+model users {
+  id         String        @id @default(uuid())
+  full_name  String     @db.VarChar(150)
+  email      String     @unique @db.VarChar(120)
+  password   String     @db.VarChar(255)
+  phone      String?    @db.VarChar(20)
+  address    String?    
+  role       user_roles @default(CUSTOMER)
+  budget     Float?     @default(0)
+  created_at DateTime   @default(now())
+  updated_at DateTime   @updatedAt
+}
+
+// Idempotency ledger for budget reversals — one row per refund_key, prevents double-credit.
+model refund_ledger {
+  id         String   @id @default(uuid())
+  // "refund:orderId:userId:originalIdempotencyKey"
+  refund_key String   @unique @map("refund_key") @db.VarChar(255)
+  user_id    String   @map("user_id") @db.VarChar(36)
+  amount     Float
+  applied_at DateTime @default(now()) @map("applied_at")
+
+  @@index([user_id])
+}

@@ -1,0 +1,477 @@
+# =============================================================================
+# PharmaFlow — Full Stack Docker Compose
+# =============================================================================
+#
+# PURPOSE: Local development / self-hosted alternative to cloud databases.
+#          Replaces:
+#            - Neon (PostgreSQL)  → local postgres:16-alpine containers
+#            - Railway (MySQL)    → local mysql:8.0 container
+#            - Upstash (Redis)    → local redis:7-alpine container
+#            - MongoDB Atlas      → local mongo:7 container
+#            - CloudAMQP          → local rabbitmq:3-management container
+#
+# HOW TO USE:
+#   1. cp .env.example .env   # fill in your credentials
+#   2. docker compose up -d --build
+#   3. docker compose logs -f              # tail all logs
+#   4. docker compose down -v              # stop + wipe volumes
+#
+# PORTS exposed to host:
+#   3000  API Gateway (entry point for every request)
+#   3001  Auth Service
+#   3002  Product Service
+#   3003  Order Service
+#   3004  Notification Service
+#   3005  Payment Service
+#   3100  Loki HTTP API
+#   3200  Grafana UI → http://localhost:3200  (admin / admin)
+#   5432  Postgres
+#   3306  MySQL
+#   6379  Redis
+#   27017 MongoDB
+#   5672  RabbitMQ AMQP  |  15672 RabbitMQ Management UI
+#   50051 gRPC product-service  |  50052 gRPC order-service
+#
+# CREDENTIALS:
+#   All sensitive values are read from the root .env file.
+#   Never commit .env — commit only .env.example.
+#
+# NOTES FOR FUTURE YOU:
+#   • auth-service and payment-service use MySQL (provider = "mysql")
+#   • order-service and product-service use PostgreSQL (provider = "postgresql")
+#   • notification-service uses MongoDB
+#   • product-service also uses Redis for caching
+#   • All services communicate over the internal "pharmaflow" Docker network;
+#     use service names as hostnames inside the network (not localhost).
+#   • Prisma migrations run automatically via `npx prisma migrate deploy` in
+#     the CMD of each service that has a Prisma schema.
+#   • logging-service is a pure RabbitMQ consumer — it has no HTTP server.
+#     The health-check-service therefore skips it from HTTP probing.
+#
+# =============================================================================
+
+name: pharmaflow
+
+# ---------------------------------------------------------------------------
+# Named volumes for data persistence across container restarts
+# ---------------------------------------------------------------------------
+volumes:
+  mysql_data:
+  pg_data:
+  redis_data:
+  mongo_data:
+  rabbitmq_data:
+  loki_data:
+  grafana_data:
+
+# ---------------------------------------------------------------------------
+# Shared network — every service talks over this bridge
+# ---------------------------------------------------------------------------
+networks:
+  pharmaflow:
+    driver: bridge
+
+# =============================================================================
+# SERVICES
+# =============================================================================
+services:
+
+  # ── MySQL 8 ── auth-service + payment-service ──────────────────────────────
+  mysql:
+    image: mysql:8.0
+    container_name: pharmaflow-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    # Create both databases on first boot
+    command: >
+      bash -c "
+        docker-entrypoint.sh mysqld &
+        until mysqladmin ping -h 127.0.0.1 --silent; do sleep 1; done;
+        mysql -uroot -p${MYSQL_ROOT_PASSWORD} -e \"
+          CREATE DATABASE IF NOT EXISTS auth_service;
+          CREATE DATABASE IF NOT EXISTS payment_service;
+          GRANT ALL PRIVILEGES ON auth_service.* TO '${MYSQL_USER}'@'%';
+          GRANT ALL PRIVILEGES ON payment_service.* TO '${MYSQL_USER}'@'%';
+          FLUSH PRIVILEGES;
+        \";
+        wait
+      "
+    ports:
+      - "3307:3306" # Mapped to 3307 on host to avoid conflict with local MySQL
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - pharmaflow
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u${MYSQL_USER}", "-p${MYSQL_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ── PostgreSQL 16 ── order-service + product-service ───────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: pharmaflow-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./infra/postgres-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5432:5432"
+    networks:
+      - pharmaflow
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ── Redis 7 ── product-service cache ───────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: pharmaflow-redis
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - pharmaflow
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # ── MongoDB 7 ── notification-service ─────────────────────────────────────
+  mongo:
+    image: mongo:7
+    container_name: pharmaflow-mongo
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+      MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE}
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - pharmaflow
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ── RabbitMQ 3 ── event bus for all services ──────────────────────────────
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: pharmaflow-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+    ports:
+      - "5672:5672"   # AMQP
+      - "15672:15672" # Management UI → http://localhost:15672
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - pharmaflow
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ── Loki ── log storage + query engine ────────────────────────────────────
+  loki:
+    image: grafana/loki:2.9.0
+    container_name: pharmaflow-loki
+    restart: unless-stopped
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - loki_data:/loki
+    networks:
+      - pharmaflow
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3100/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ── Grafana ── visualisation UI ────────────────────────────────────────────
+  # Mapped to host port 3200 to avoid clash with app services on 3000–3005
+  grafana:
+    image: grafana/grafana:latest
+    container_name: pharmaflow-grafana
+    restart: unless-stopped
+    depends_on:
+      loki:
+        condition: service_healthy
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GF_SECURITY_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "3200:3000" # host:container — 3200 avoids clash with app services
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - pharmaflow
+
+  # =============================================================================
+  # APPLICATION SERVICES
+  # =============================================================================
+
+  # ── Auth Service ── MySQL, RabbitMQ ────────────────────────────────────────
+  auth-service:
+    build:
+      context: ./auth-service
+      dockerfile: Dockerfile
+    container_name: pharmaflow-auth
+    restart: unless-stopped
+    command: sh -c "npx prisma db push && node src/index.js"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      PORT: ${AUTH_SERVICE_PORT}
+      SERVICE_NAME: auth-service
+      LOG_LEVEL: info
+      APIGW_URL: http://api-gw:${API_GW_PORT}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      DATABASE_URL: ${AUTH_DATABASE_URL}
+      RABBITMQ_URL: ${RABBITMQ_URL}
+    ports:
+      - "${AUTH_SERVICE_PORT}:${AUTH_SERVICE_PORT}"
+    volumes:
+      - ./proto:/proto:ro
+    networks:
+      - pharmaflow
+
+  # ── Product Service ── PostgreSQL, Redis, RabbitMQ, gRPC :50051 ────────────
+  product-service:
+    build:
+      context: ./product-service
+      dockerfile: Dockerfile
+    container_name: pharmaflow-product
+    restart: unless-stopped
+    command: sh -c "npx prisma db push && node src/index.js"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      PORT: ${PRODUCT_SERVICE_PORT}
+      SERVICE_NAME: product-service
+      LOG_LEVEL: info
+      APIGW_URL: http://api-gw:${API_GW_PORT}
+      DATABASE_URL: ${PRODUCT_DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      UPSTASH_REDIS_REST_URL: ""   # not used with local Redis
+      UPSTASH_REDIS_REST_TOKEN: "" # not used with local Redis
+      GRPC_PORT: ${GRPC_PORT_PRODUCT}
+      RABBITMQ_URL: ${RABBITMQ_URL}
+    ports:
+      - "${PRODUCT_SERVICE_PORT}:${PRODUCT_SERVICE_PORT}"
+      - "${GRPC_PORT_PRODUCT}:${GRPC_PORT_PRODUCT}" # gRPC — consumed by order-service
+    volumes:
+      - ./proto:/proto:ro
+    networks:
+      - pharmaflow
+
+  # ── Order Service ── PostgreSQL, RabbitMQ, gRPC client → product, gRPC server :50052
+  order-service:
+    build:
+      context: ./order-service
+      dockerfile: Dockerfile
+    container_name: pharmaflow-order
+    restart: unless-stopped
+    command: sh -c "npx prisma db push && node src/index.js"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      product-service:
+        condition: service_started
+    environment:
+      PORT: ${ORDER_SERVICE_PORT}
+      SERVICE_NAME: order-service
+      LOG_LEVEL: info
+      APIGW_URL: http://api-gw:${API_GW_PORT}
+      DATABASE_URL: ${ORDER_DATABASE_URL}
+      PRODUCT_SERVICE_GRPC_URL: product-service:${GRPC_PORT_PRODUCT}
+      GRPC_PORT: ${GRPC_PORT_ORDER}
+      RABBITMQ_URL: ${RABBITMQ_URL}
+    ports:
+      - "${ORDER_SERVICE_PORT}:${ORDER_SERVICE_PORT}"
+      - "${GRPC_PORT_ORDER}:${GRPC_PORT_ORDER}" # gRPC — consumed by payment-service
+    volumes:
+      - ./proto:/proto:ro
+    networks:
+      - pharmaflow
+
+  # ── Payment Service ── MySQL, RabbitMQ, gRPC client → order ────────────────
+  payment-service:
+    build:
+      context: ./payment-service
+      dockerfile: Dockerfile
+    container_name: pharmaflow-payment
+    restart: unless-stopped
+    command: sh -c "npx prisma db push && node src/index.js"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      order-service:
+        condition: service_started
+    environment:
+      PORT: ${PAYMENT_SERVICE_PORT}
+      SERVICE_NAME: payment-service
+      LOG_LEVEL: info
+      APIGW_URL: http://api-gw:${API_GW_PORT}
+      DATABASE_URL: ${PAYMENT_DATABASE_URL}
+      RABBITMQ_URL: ${RABBITMQ_URL}
+      ORDER_SERVICE_GRPC_URL: order-service:${GRPC_PORT_ORDER}
+    ports:
+      - "${PAYMENT_SERVICE_PORT}:${PAYMENT_SERVICE_PORT}"
+    volumes:
+      - ./proto:/proto:ro
+    networks:
+      - pharmaflow
+
+  # ── Notification Service ── MongoDB, RabbitMQ ──────────────────────────────
+  notification-service:
+    build:
+      context: ./notification-service
+      dockerfile: Dockerfile
+    container_name: pharmaflow-notification
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      PORT: ${NOTIFICATION_SERVICE_PORT}
+      SERVICE_NAME: notification-service
+      LOG_LEVEL: info
+      APIGW_URL: http://api-gw:${API_GW_PORT}
+      # NOTE: include authSource=admin because root credentials are set above
+      MONGO_URI: ${MONGO_URI}
+      RABBITMQ_URL: ${RABBITMQ_URL}
+    ports:
+      - "${NOTIFICATION_SERVICE_PORT}:${NOTIFICATION_SERVICE_PORT}"
+    networks:
+      - pharmaflow
+
+  # ── API Gateway ── routes all public traffic ───────────────────────────────
+  api-gw:
+    build:
+      context: ./api-gw
+      dockerfile: Dockerfile
+    container_name: pharmaflow-api-gw
+    restart: unless-stopped
+    depends_on:
+      - auth-service
+      - product-service
+      - order-service
+      - payment-service
+      - notification-service
+    environment:
+      PORT: ${API_GW_PORT}
+      SERVICE_NAME: api-gw
+      LOG_LEVEL: info
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      AUTH_SERVICE_URL: http://auth-service:${AUTH_SERVICE_PORT}/auth-service/api/v1
+      PRODUCT_SERVICE_URL: http://product-service:${PRODUCT_SERVICE_PORT}/product-service/api/v1
+      ORDER_SERVICE_URL: http://order-service:${ORDER_SERVICE_PORT}/order-service/api/v1
+      NOTIFICATION_SERVICE_URL: http://notification-service:${NOTIFICATION_SERVICE_PORT}
+      PAYMENT_SERVICE_URL: http://payment-service:${PAYMENT_SERVICE_PORT}/payment-service/api/v1
+    ports:
+      - "${API_GW_PORT}:${API_GW_PORT}" # ← Only this port needs to be public
+    networks:
+      - pharmaflow
+
+  # ── logging-service ── RabbitMQ consumer → Loki ───────────────────────────
+  # Pure consumer process — no HTTP server / no exposed port
+  logging-service:
+    build:
+      context: ./logging-service
+      dockerfile: Dockerfile
+    container_name: pharmaflow-logging-service
+    restart: unless-stopped
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      loki:
+        condition: service_healthy
+    environment:
+      RABBITMQ_URL: ${RABBITMQ_URL}
+      LOKI_URL: ${LOKI_URL}
+      BATCH_SIZE: ${BATCH_SIZE}
+      FLUSH_INTERVAL_MS: ${FLUSH_INTERVAL_MS}
+    networks:
+      - pharmaflow
+
+  # ── Health-Check Service ── polls all services' /health endpoints ──────────
+  healt-check-service:
+    build:
+      context: ./healt-check-service
+      dockerfile: Dockerfile
+    container_name: pharmaflow-health-check
+    restart: unless-stopped
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      api-gw:
+        condition: service_started
+      auth-service:
+        condition: service_started
+      product-service:
+        condition: service_started
+      order-service:
+        condition: service_started
+      payment-service:
+        condition: service_started
+      notification-service:
+        condition: service_started
+    environment:
+      SERVICE_NAME: health-check-service
+      RABBITMQ_URL: ${RABBITMQ_URL}
+      HEALTH_CHECK_INTERVAL_MS: ${HEALTH_CHECK_INTERVAL_MS}
+      # Use Docker service names — NOT localhost
+      API_GW_URL: http://api-gw:${API_GW_PORT}
+      AUTH_SERVICE_URL: http://auth-service:${AUTH_SERVICE_PORT}
+      PRODUCT_SERVICE_URL: http://product-service:${PRODUCT_SERVICE_PORT}
+      ORDER_SERVICE_URL: http://order-service:${ORDER_SERVICE_PORT}
+      PAYMENT_SERVICE_URL: http://payment-service:${PAYMENT_SERVICE_PORT}
+      NOTIFICATION_SERVICE_URL: http://notification-service:${NOTIFICATION_SERVICE_PORT}
+      # logging-service is a pure consumer — no HTTP endpoint to probe
+      LOGGING_SERVICE_URL: ""
+    networks:
+      - pharmaflow

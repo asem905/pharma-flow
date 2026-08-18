@@ -1,0 +1,41 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Dependency directories
+node_modules/
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# dotenv environment variables file — NEVER commit real credentials
+.env
+.env.test
+.env.local
+.env.*.local
+# .env.example is intentionally NOT ignored — it is the safe template
+
+# Build and Temp folders
+dist/
+build/
+.tmp
+.temp
+
+# IDE / Editor
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Docker configs and infra are committed to Git (credentials are in .env)
+# docker-compose.yml — DO NOT ignore
+# infra/           — DO NOT ignore
