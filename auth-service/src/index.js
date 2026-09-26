@@ -21,8 +21,15 @@ app.use("/auth-service/api/v1", router);
 
 const startServer = async () => {
     const users = await usersModel.findAll({}, { email: true });
-    const emails = users.map(u => u.email);
-    console.log("Seeding bloom filter with emails:", emails);
+    let emails = [];
+    if (users) {
+        emails = users.map(u => u.email);
+        console.log("Seeding bloom filter with emails:");
+        console.log(emails);
+    }
+    else {
+        console.log("No users found");
+    }
 
     bloomFilter.initialize(emails);
 

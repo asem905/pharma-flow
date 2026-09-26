@@ -1,7 +1,12 @@
 import { PrismaClient } from "../generated/prisma/index.js";
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 import dotenv from "dotenv";
+import fs from "fs";
+import { fileURLToPath } from "url";
+import path from "path";
 dotenv.config();
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Parse DATABASE_URL into individual connection options
 // Format: mysql://user:password@host:port/database
@@ -18,6 +23,13 @@ const adapter = new PrismaMariaDb({
     acquireTimeout: 10000,       // wait up to 10s to acquire a connection from the pool
     idleTimeout: 30000,          // release connections idle > 30s before Railway kills them
     keepAliveDelay: 10000,       // send keepalive every 10s to hold the TCP connection open
+    // Aiven CA cert to verify that the server is genuinely Aiven (not a MITM)
+    ssl: {
+        rejectUnauthorized: true, // change to false if you don't have the CA cert
+        ca: fs.readFileSync(path.resolve(__dirname, "../../ca.pem"))
+    },
+    // Required for caching_sha2_password: fetch the server's RSA public key to encrypt the password
+    allowPublicKeyRetrieval: true,
 });
 
 export const prisma = new PrismaClient({ adapter });

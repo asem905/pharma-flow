@@ -36,6 +36,7 @@ build/
 *.sln
 *.sw?
 
+
 # Docker configs and infra are committed to Git (credentials are in .env)
 # docker-compose.yml — DO NOT ignore
 # infra/           — DO NOT ignore

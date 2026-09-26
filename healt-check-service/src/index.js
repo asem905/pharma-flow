@@ -39,7 +39,7 @@ async function checkService(service) {
         const latencyMs = Date.now() - start;
         const isTimeout = err.code === "ECONNABORTED" || err.message?.includes("timeout");
 
-        logger.warn("Health check failed", {
+        logger.error("Health check failed", {
             service: service.name,
             status: "DOWN",
             reason: isTimeout ? "timeout" : err.message,
@@ -61,7 +61,7 @@ async function runHealthChecks() {
     const upCount = summary.filter(r => r.status === "UP").length;
 
     if (downCount > 0) {
-        logger.warn("Health sweep complete — some services are DOWN", {
+        logger.error("Health sweep complete — some services are DOWN", {
             up: upCount,
             down: downCount,
             downServices: summary.filter(r => r.status === "DOWN").map(r => r.service),
